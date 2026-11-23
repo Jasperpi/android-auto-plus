@@ -208,6 +208,31 @@ class BoardModelTest {
   }
 
   @Test
+  fun whenTheNotSentNoticeCannotBeSpokenTheBoardCarriesIt() {
+    board.open(maya)
+    board.reply()
+    dictation.hear(Heard.Words("On my way"))
+    board.pause()
+
+    // A call took the screen, and it has the sound too.
+    speaker.finish(Spoken.FAILED)
+
+    assertEquals(Phase.Trouble("Your reply was not sent", canRetry = false), phase)
+  }
+
+  @Test
+  fun aSpokenNotSentNoticeLeavesTheBoardAsItWas() {
+    board.open(maya)
+    board.reply()
+    dictation.hear(Heard.Words("On my way"))
+    board.pause()
+
+    speaker.finish()
+
+    assertEquals(Phase.Ready, phase)
+  }
+
+  @Test
   fun leavingWhileStillListeningDropsTheReplyWithoutAnAnnouncement() {
     board.open(maya)
     speaker.finish()
@@ -230,6 +255,7 @@ class BoardModelTest {
     board.close()
 
     assertEquals(stopsBefore + 1, speaker.stops)
+    assertEquals("an unplug is not a failed notice", Scene.Gantry, board.scene)
   }
 
   @Test

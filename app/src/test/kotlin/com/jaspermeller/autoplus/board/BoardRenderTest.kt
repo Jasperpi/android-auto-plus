@@ -385,6 +385,24 @@ class BoardRenderTest {
   }
 
   @Test
+  fun signsLeftFromOneThreadCannotAnswerAnotherTheHostButtonOpened() {
+    val first = signals.talks.first()
+    board.open(first)
+    paintAt(0)
+    paintAt(1000)
+    val readyMade = painter.targetBoxes[3]
+
+    // Android Auto's own button opens the newest thread; no frame has been painted since.
+    signals.talks = signals.talks.drop(1)
+    board.readNewest()
+    assertTrue((board.scene as Scene.Thread).talk != first)
+
+    assertFalse(painter.tap(readyMade.centerX(), readyMade.centerY(), 1000, board))
+    assertFalse(painter.tap(readyMade.centerX(), readyMade.centerY(), 3000, board))
+    assertTrue("a line picked for one person never goes to another", signals.sent.isEmpty())
+  }
+
+  @Test
   fun cancelWorksTheInstantTheWordsAppear() {
     board.open(signals.talks.first())
     board.reply()

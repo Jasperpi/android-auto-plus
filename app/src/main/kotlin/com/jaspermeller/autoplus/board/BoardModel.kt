@@ -182,8 +182,9 @@ class BoardModel(
   /** Drops the reply in progress and returns to the conversation. */
   fun cancelReply() {
     val thread = scene as? Scene.Thread ?: return
-    // A tap on a Cancel that has not been repainted yet must not turn "Sent" back into choices.
-    if (thread.phase == Phase.Sent) return
+    // Only from the phases that show a way out. A tap on a Cancel that has not been repainted
+    // yet must not turn "Sent" back into choices, nor cut off a readout that has just begun.
+    if (thread.phase !is Phase.Listening && thread.phase !is Phase.Confirm && thread.phase !is Phase.Trouble) return
     leave()
     phase(Phase.Ready)
   }
@@ -212,8 +213,15 @@ class BoardModel(
     // A driver who left during "Sending in 3" trusts the countdown. The words were complete and
     // did not go, so the car says so; the board they would have read it on is not there.
     if (phase is Phase.Confirm) {
+      val mine = turn
       speaking = true
-      speaker.say(NOT_SENT.trim()) { speaking = false }
+      speaker.say(NOT_SENT.trim()) { how ->
+        speaking = false
+        // What usually takes the screen mid-countdown is a call, and a call also takes the
+        // sound. If the notice could not be spoken, the board carries it for when they return.
+        // Not after a tap or an unplug: that is the driver moving on, and a new turn.
+        if (how != Spoken.FINISHED && mine == turn) phase(Phase.Trouble("Your reply was not sent", canRetry = false))
+      }
     }
   }
 

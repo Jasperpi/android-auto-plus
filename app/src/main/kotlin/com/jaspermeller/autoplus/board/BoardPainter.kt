@@ -147,6 +147,11 @@ class BoardPainter(
   /** Runs the sign under the point, if any. */
   fun tap(x: Float, y: Float, now: Long, board: BoardModel): Boolean {
     val hit = targets.lastOrNull { it.box.contains(x, y) } ?: return false
+    // The signs that can be tapped are the ones from the last frame. If the board has moved on
+    // since without a frame in between (the host's own button opened another thread), they
+    // belong to a layout that is gone, and a ready-made line among them would go to whoever is
+    // open now. Only a way out may still act.
+    if (!hit.wayOut && layoutOf(board) != lastLayout) return false
     if (now < deafUntil && !hit.wayOut) return false
     flashBox = RectF(hit.box)
     flashUntil = now + FLASH_MS

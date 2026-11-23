@@ -22,6 +22,26 @@ import android.util.Log
 import com.jaspermeller.autoplus.R
 
 /**
+ * What the stand-in messaging app does when the board replies to it or marks it read: log it,
+ * and clear the notification, as a real app would. Not exported: only this app's own pending
+ * intents reach it.
+ */
+class DemoReplies : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    val from = intent.getStringExtra(DemoReceiver.FROM) ?: return
+    when (intent.action) {
+      DemoReceiver.REPLIED -> {
+        val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(DemoReceiver.REPLY_KEY)
+        Log.i(DemoReceiver.TAG, "replied to=$from text=$text")
+      }
+      DemoReceiver.READ -> Log.i(DemoReceiver.TAG, "read from=$from")
+      else -> return
+    }
+    DemoReceiver.clear(context, from)
+  }
+}
+
+/**
  * Pretends to be a messaging app and a music player so the board can be tried without either.
  *
  *   adb shell am broadcast -n com.jaspermeller.autoplus/.demo.DemoReceiver \
@@ -38,15 +58,6 @@ class DemoReceiver : BroadcastReceiver() {
     val from = intent.getStringExtra(FROM) ?: "Maya Okafor"
     when (intent.action) {
       MESSAGE -> message(context, from, intent.getStringExtra("text") ?: "are you still coming tonight")
-      REPLIED -> {
-        val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(REPLY_KEY)
-        Log.i(TAG, "replied to=$from text=$text")
-        clear(context, from)
-      }
-      READ -> {
-        Log.i(TAG, "read from=$from")
-        clear(context, from)
-      }
       PLAY -> play(context, intent.getStringExtra("title") ?: TRACKS[0].first, intent.getStringExtra("artist") ?: TRACKS[0].second)
       STOP -> {
         session?.release()
@@ -89,13 +100,8 @@ class DemoReceiver : BroadcastReceiver() {
         .build())
   }
 
-  private fun clear(context: Context, from: String) {
-    threads.remove(from)
-    context.getSystemService(NotificationManager::class.java).cancel(from, 1)
-  }
-
   private fun own(context: Context, action: String, from: String) =
-      Intent(context, DemoReceiver::class.java).setAction(action).putExtra(FROM, from)
+      Intent(context, DemoReplies::class.java).setAction(action).putExtra(FROM, from)
 
   private fun play(context: Context, title: String, artist: String) {
     val live = session ?: MediaSession(context.applicationContext, TAG).also { created ->
@@ -130,9 +136,14 @@ class DemoReceiver : BroadcastReceiver() {
     const val READ = "com.jaspermeller.autoplus.demo.READ"
     const val PLAY = "com.jaspermeller.autoplus.demo.PLAY"
     const val STOP = "com.jaspermeller.autoplus.demo.STOP"
-    private const val FROM = "from"
+    internal const val FROM = "from"
     private const val CHANNEL = "demo-messages"
-    private const val REPLY_KEY = "reply"
+    internal const val REPLY_KEY = "reply"
+
+    internal fun clear(context: Context, from: String) {
+      threads.remove(from)
+      context.getSystemService(NotificationManager::class.java).cancel(from, 1)
+    }
 
     private val TRACKS = listOf(
         "Pink + White" to "Frank Ocean",
