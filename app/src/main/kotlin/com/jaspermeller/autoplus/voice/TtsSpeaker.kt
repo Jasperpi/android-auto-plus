@@ -42,6 +42,14 @@ class TtsSpeaker(context: Context) : Speaker {
    */
   private val overdue = Runnable { speakingId?.let(::failed) }
 
+  /** The same for a speech service that never even reports in: the readout fails rather than hangs. */
+  private val slowStart = Runnable {
+    val (_, done) = waiting ?: return@Runnable
+    waiting = null
+    discardEngine()
+    done(Spoken.FAILED)
+  }
+
   override fun say(text: String, done: (Spoken) -> Unit) {
     stop()
     if (engine == null) {
@@ -50,10 +58,16 @@ class TtsSpeaker(context: Context) : Speaker {
       created = TextToSpeech(context) { status -> main.post { if (engine === created) started(status) } }
       engine = created
     }
-    if (ready) speak(text, done) else waiting = text to done
+    if (ready) {
+      speak(text, done)
+    } else {
+      waiting = text to done
+      main.postDelayed(slowStart, START_MS)
+    }
   }
 
   override fun stop() {
+    main.removeCallbacks(slowStart)
     waiting?.let { (_, done) ->
       waiting = null
       done(Spoken.INTERRUPTED)
@@ -65,6 +79,7 @@ class TtsSpeaker(context: Context) : Speaker {
   }
 
   private fun started(status: Int) {
+    main.removeCallbacks(slowStart)
     val tts = engine
     if (status != TextToSpeech.SUCCESS || tts == null) {
       discardEngine()
@@ -142,5 +157,8 @@ class TtsSpeaker(context: Context) : Speaker {
     /** Far longer than any engine takes to say the text: fifteen seconds, plus time per letter. */
     const val OVERDUE_MS = 15_000L
     const val OVERDUE_PER_LETTER_MS = 150L
+
+    /** How long a speech engine gets to report in before the readout is given up. */
+    const val START_MS = 10_000L
   }
 }

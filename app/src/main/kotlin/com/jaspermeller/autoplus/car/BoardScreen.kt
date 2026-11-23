@@ -19,6 +19,7 @@ import androidx.car.app.model.Template
 import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import com.jaspermeller.autoplus.R
 import com.jaspermeller.autoplus.app
@@ -150,6 +151,9 @@ class BoardScreen(
   }
 
   override fun onClick(x: Float, y: Float) {
+    // A tap the host delivers after another app has taken the screen is not one the driver can
+    // see the result of. Acting on it could open the microphone behind that app.
+    if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
     if (painter.tap(x, y, SystemClock.uptimeMillis(), board)) redraw()
   }
 

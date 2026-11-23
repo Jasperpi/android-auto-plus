@@ -138,6 +138,21 @@ class BoardScreenTest {
   }
 
   @Test
+  fun aTapDeliveredAfterAnotherAppTookTheScreenIsIgnored() {
+    controller.moveToState(Lifecycle.State.RESUMED)
+    val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!
+    callback.onSurfaceAvailable(surface(1280, 720))
+    idle()
+    controller.moveToState(Lifecycle.State.CREATED)
+
+    // A late tap on a conversation sign: it must not start a readout, let alone a reply.
+    callback.onClick(1000f, 150f)
+    idle()
+
+    assertTrue(speaker.said.isEmpty())
+  }
+
+  @Test
   fun aTapOnBareGroundDoesNothing() {
     controller.moveToState(Lifecycle.State.RESUMED)
     val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!

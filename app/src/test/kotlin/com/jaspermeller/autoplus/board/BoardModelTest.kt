@@ -291,6 +291,17 @@ class BoardModelTest {
   }
 
   @Test
+  fun aTapOnAStaleCancelCannotCutOffAReadout() {
+    board.open(maya)
+    val stopsBefore = speaker.stops
+
+    board.cancelReply()
+
+    assertEquals(Phase.Reading, phase)
+    assertEquals(stopsBefore, speaker.stops)
+  }
+
+  @Test
   fun aTapOnAStaleCancelCannotUndoSent() {
     board.open(maya)
     board.quick("On my way")

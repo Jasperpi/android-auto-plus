@@ -95,6 +95,25 @@ class TtsSpeakerTest {
   }
 
   @Test
+  fun anEngineThatNeverReportsInFailsTheReadoutAndIsReplaced() {
+    speaker.say("hello") { ended += it }
+    val silent = engine()
+
+    looper.idleFor(java.time.Duration.ofSeconds(15))
+
+    assertEquals(listOf(Spoken.FAILED), ended)
+    assertTrue(shadowOf(silent).isShutdown)
+
+    // Its late answer, if it ever comes, is not taken for the next engine's.
+    speaker.say("again") { ended += it }
+    shadowOf(silent).onInitListener.onInit(TextToSpeech.SUCCESS)
+    looper.idle()
+    assertNull("the new engine has not reported in yet", shadowOf(engine()).lastSpokenText)
+    engineReports()
+    assertEquals(listOf(Spoken.FAILED, Spoken.FINISHED), ended)
+  }
+
+  @Test
   fun anEngineThatDiesMidSentenceIsNoticedAndTheReadoutFails() {
     speaker.say("hello") { ended += it }
     engineReports(thenIdle = false)

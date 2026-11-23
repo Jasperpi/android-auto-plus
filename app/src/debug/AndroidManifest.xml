@@ -11,7 +11,8 @@
         android:exported="false" />
 
     <!-- DUMP is held by adb's shell and by no ordinary app, so only a person at a computer
-         can post a pretend message. The app's own reply and mark-read intents still arrive. -->
+         can post a pretend message. The stand-in app's own reply and mark-read intents go to
+         DemoReplies above, which nothing outside the app can reach. -->
     <receiver
         android:name=".demo.DemoReceiver"
         android:exported="true"
