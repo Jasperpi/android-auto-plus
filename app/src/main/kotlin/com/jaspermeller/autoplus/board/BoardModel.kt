@@ -82,14 +82,16 @@ class BoardModel(
     val mine = leave()
     scene = Scene.Thread(talk, Phase.Reading)
     onChange()
+    val readout = Readout.of(talk)
     speaking = true
-    speaker.say(Readout.of(talk)) { how ->
+    speaker.say(readout.words) { how ->
       speaking = false
       if (mine != turn) return@say
       when (how) {
         Spoken.FINISHED -> {
-          // Only what was in the snapshot has been heard; anything newer stays unread.
-          signals.heard(talk.key, talk.latestAt)
+          // Only a thread spoken in full counts as heard. One that was cut down to its last
+          // few messages stays unread on the phone.
+          if (readout.complete) signals.heard(talk)
           phase(Phase.Ready)
         }
         Spoken.INTERRUPTED -> phase(Phase.Ready)

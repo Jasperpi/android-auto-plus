@@ -83,8 +83,9 @@ class PhoneTest {
   fun hearingAConversationMarksItReadOnce() {
     post("a")
 
-    phone.heard("a", upTo = 100L)
-    phone.heard("a", upTo = 100L)
+    val read = phone.conversations().single()
+    phone.heard(read)
+    phone.heard(read)
     deliver()
 
     assertEquals(1, reads)
@@ -94,9 +95,11 @@ class PhoneTest {
   @Test
   fun aMessageThatArrivedDuringTheReadoutKeepsTheThreadUnread() {
     post("a")
+    // What the car read aloud: the thread before its latest message arrived. The newcomer
+    // carries an older clock time than the one read, which a timestamp check would miss.
+    val read = phone.conversations().single().let { it.copy(messages = listOf(Message("Maya", "earlier", 900L))) }
 
-    // The car read the thread as it stood at time 50; the message at 100 came in meanwhile.
-    phone.heard("a", upTo = 50L)
+    phone.heard(read)
     deliver()
 
     assertEquals(0, reads)
@@ -106,7 +109,7 @@ class PhoneTest {
   @Test
   fun aReplyStillWorksAfterTheConversationWasHeard() {
     post("a")
-    phone.heard("a", upTo = 100L)
+    phone.heard(phone.conversations().single())
 
     assertTrue(phone.reply("a", "Yes"))
     deliver()

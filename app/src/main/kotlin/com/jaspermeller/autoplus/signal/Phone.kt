@@ -70,19 +70,31 @@ class Phone(private val context: Context) : Signals {
     }
   }
 
-  override fun heard(key: String, upTo: Long) {
+  override fun heard(talk: Conversation) {
+    val key = talk.key
     // Hearing it a second time must not fire the app's action again.
     val reading = inbox.showing(key) ?: return
     // Something arrived while the car was talking. Marking the thread read now would bury a
-    // message nobody heard, so it stays on the board with the new one counted.
-    if (reading.conversation.latestAt > upTo) return
+    // message nobody heard, so it stays on the board with the new one counted. The messages
+    // themselves are compared, since senders' clocks cannot be trusted to run forwards.
+    if (reading.conversation.messages != talk.messages) return
     try {
       // Prefer the app's own action so its unread badge clears too.
-      reading.markRead?.send() ?: listener?.cancelNotification(key)
+      reading.markRead?.send() ?: dismiss(key)
     } catch (cancelled: PendingIntent.CanceledException) {
-      listener?.cancelNotification(key)
+      dismiss(key)
+    } catch (refused: RuntimeException) {
+      dismiss(key)
     }
     inbox.remove(key)
+  }
+
+  private fun dismiss(key: String) {
+    try {
+      listener?.cancelNotification(key)
+    } catch (revoked: SecurityException) {
+      // Notification access was switched off mid-readout; there is nothing left to clear.
+    }
   }
 
   private fun announce() {

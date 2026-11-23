@@ -68,7 +68,8 @@ object NotificationReader {
         .maxByOrNull { if (it.semanticAction == NotificationCompat.Action.SEMANTIC_ACTION_REPLY) 1 else 0 }
     val reply = replyAction?.let { ReplyRoute(it.actionIntent!!, it.remoteInputs!!) }
     val markRead = actions
-        .firstOrNull { it.semanticAction == NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ }
+        // The same rule as for replies: an action that opens a screen is no use from the car.
+        .firstOrNull { it.semanticAction == NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ && it.actionIntent?.isActivity == false }
         ?.actionIntent
 
     return Reading(

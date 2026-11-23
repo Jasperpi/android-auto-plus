@@ -17,7 +17,8 @@ use. What it replaces is the part you look at and touch.
 
 - **Messages.** Each conversation with unread messages is a blue sign. Tap it and the car
   reads the messages aloud; nothing is put on the screen to read. A conversation you have
-  heard is marked read on the phone and leaves the board.
+  heard in full is marked read on the phone and leaves the board. A long one is read from its
+  last five messages and stays unread, since you have not heard the rest.
 - **Replies.** `Reply` quiets the music, listens through the car's microphone, shows your
   words, and sends them after four seconds unless you stop it. Four ready-made replies send at
   once. Switching to another app on the car screen drops a reply that has not sent.

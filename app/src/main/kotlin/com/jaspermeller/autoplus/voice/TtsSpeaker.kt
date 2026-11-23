@@ -36,6 +36,12 @@ class TtsSpeaker(context: Context) : Speaker {
   private var speakingDone: ((Spoken) -> Unit)? = null
   private var serial = 0
 
+  /**
+   * A speech service that is killed mid-sentence never calls back. Without this the music
+   * would stay ducked and the board would say "Reading" until someone tapped it.
+   */
+  private val overdue = Runnable { speakingId?.let(::failed) }
+
   override fun say(text: String, done: (Spoken) -> Unit) {
     stop()
     if (engine == null) {
@@ -99,6 +105,7 @@ class TtsSpeaker(context: Context) : Speaker {
     val id = "say-${++serial}"
     speakingId = id
     speakingDone = done
+    main.postDelayed(overdue, OVERDUE_MS + text.length * OVERDUE_PER_LETTER_MS)
     if (engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) failed(id)
   }
 
@@ -123,7 +130,14 @@ class TtsSpeaker(context: Context) : Speaker {
     val done = speakingDone
     speakingId = null
     speakingDone = null
+    main.removeCallbacks(overdue)
     audio.abandonAudioFocusRequest(focus)
     done?.invoke(how)
+  }
+
+  private companion object {
+    /** Far longer than any engine takes to say the text: fifteen seconds, plus time per letter. */
+    const val OVERDUE_MS = 15_000L
+    const val OVERDUE_PER_LETTER_MS = 150L
   }
 }

@@ -58,8 +58,8 @@ class BoardRenderTest {
       Surface("phone", 1080, 1500, 420),
       // A sliver, like a nav card squeezed beside another app.
       Surface("sliver", 900, 260, 160, cramped = true),
-      // A small card, a little above the size at which the painter gives up.
-      Surface("card", 420, 280, 160, cramped = true),
+      // A small card, a little above the size at which a stacked board gives up.
+      Surface("card", 420, 320, 160, cramped = true),
       // Below it: the board must leave the ground bare rather than draw fragments.
       Surface("tiny", 250, 160, 160, cramped = true),
   )
@@ -175,6 +175,102 @@ class BoardRenderTest {
     val scene = board.scene as Scene.Thread
     assertEquals("Maya Okafor", scene.talk.title)
     assertFalse(painter.tap(2f, 2f, 0, board))
+  }
+
+  private fun paintAt(now: Long) {
+    val bitmap = Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888)
+    painter.paint(Canvas(bitmap), Frame(1280, 720, Rect(0, 0, 1280, 720), 1f, night = false, now = now), board)
+  }
+
+  @Test
+  fun aStackedBoardTooShortToShowAReplysWordsStaysBlank() {
+    board.open(signals.talks.first())
+    board.reply()
+    dictation.hear(Heard.Words("On my way"))
+    // Wide enough to draw, too short for a header, the words and the choices stacked.
+    val bitmap = Bitmap.createBitmap(420, 280, Bitmap.Config.ARGB_8888)
+    painter.paint(Canvas(bitmap), Frame(420, 280, Rect(0, 0, 420, 280), 1f, night = false, now = 0), board)
+
+    assertTrue("no Send or Cancel is offered where the words cannot be read", painter.targetBoxes.isEmpty())
+  }
+
+  @Test
+  fun theSetupNoticeFitsWhereTheFullBoardWouldNot() {
+    signals.ready = false
+    val bitmap = Bitmap.createBitmap(411, 190, Bitmap.Config.ARGB_8888)
+    painter.paint(Canvas(bitmap), Frame(411, 190, Rect(0, 0, 411, 190), 1f, night = false, now = 0), board)
+
+    var yellow = 0
+    for (x in 0 until 411 step 7) for (y in 0 until 190 step 7) if (bitmap.getPixel(x, y) == Palette.DAY.yellow) yellow++
+    assertTrue("the yellow notice is drawn in the strip the phone gives it before setup", yellow > 100)
+  }
+
+  @Test
+  fun aDoubleTapOnAConversationCannotLandOnAReplyUnderIt() {
+    paintAt(0)
+    // The second conversation sign sits right where "Yes" and "No" appear on the next screen.
+    assertTrue(painter.tap(1000f, 380f, 0, board))
+    assertTrue(board.scene is Scene.Thread)
+    paintAt(20)
+
+    // The finger comes down again before the driver can have seen the new signs.
+    for (box in painter.targetBoxes) assertFalse(painter.tap(box.centerX(), box.centerY(), 120, board))
+    assertTrue(signals.sent.isEmpty())
+    assertTrue("still on the conversation, still reading", (board.scene as Scene.Thread).phase == Phase.Reading)
+
+    // Once the signs have been up for a moment, they work.
+    paintAt(600)
+    val last = painter.targetBoxes.last()
+    assertTrue(painter.tap(last.centerX(), last.centerY(), 600, board))
+    assertEquals(1, signals.sent.size)
+  }
+
+  @Test
+  fun aHurriedDoubleTapOnCancelCannotSendAReply() {
+    board.open(signals.talks.first())
+    board.reply()
+    dictation.hear(Heard.Words("wrong words"))
+    paintAt(0)
+    paintAt(1000)
+    // Cancel is the last of the three signs beside the words.
+    val cancel = painter.targetBoxes.last()
+
+    assertTrue(painter.tap(cancel.centerX(), cancel.centerY(), 1000, board))
+    assertEquals(Phase.Ready, (board.scene as Scene.Thread).phase)
+    paintAt(1020)
+    // Under the same finger there is now a ready-made reply.
+    assertFalse(painter.tap(cancel.centerX(), cancel.centerY(), 1080, board))
+
+    timer.advance(10_000)
+    assertTrue("neither the cancelled words nor a ready-made line went out", signals.sent.isEmpty())
+  }
+
+  @Test
+  fun aLayoutChangeNobodyTappedForAlsoWaitsBeforeTakingTaps() {
+    board.open(signals.talks.first())
+    board.reply()
+    paintAt(0)
+    paintAt(1000)
+    // The recognizer answers on its own: the signs change with no tap involved.
+    dictation.hear(Heard.Words("On my way"))
+    paintAt(1010)
+
+    for (box in painter.targetBoxes) assertFalse(painter.tap(box.centerX(), box.centerY(), 1100, board))
+    assertTrue(signals.sent.isEmpty())
+  }
+
+  @Test
+  fun theEndOfAReadoutDoesNotSwallowATapOnReply() {
+    board.open(signals.talks.first())
+    paintAt(0)
+    paintAt(1000)
+    speaker.finish()
+    paintAt(1010)
+
+    // Reading and Ready show the same signs, so nothing moved under the finger.
+    val reply = painter.targetBoxes[1]
+    assertTrue(painter.tap(reply.centerX(), reply.centerY(), 1020, board))
+    assertTrue(dictation.listening)
   }
 
   private fun eachSurface(name: String, night: Boolean = false, arrange: () -> Unit) {

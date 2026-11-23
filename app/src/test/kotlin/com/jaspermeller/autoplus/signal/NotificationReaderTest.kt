@@ -124,6 +124,18 @@ class NotificationReaderTest {
   }
 
   @Test
+  fun aMarkReadActionThatOpensAScreenIsNotUsed() {
+    val opensScreen = PendingIntent.getActivity(
+        context, 0, Intent("read").setPackage(context.packageName), PendingIntent.FLAG_IMMUTABLE)
+    val action = NotificationCompat.Action.Builder(0, "Mark as read", opensScreen)
+        .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+        .build()
+    val style = NotificationCompat.MessagingStyle(me).addMessage("hello", 100L, maya)
+
+    assertNull(read(builder().setStyle(style).addAction(action).build())!!.markRead)
+  }
+
+  @Test
   fun aReplyThatOpensAScreenIsNotOffered() {
     val opensScreen = PendingIntent.getActivity(
         context, 0, Intent("reply").setPackage(context.packageName), PendingIntent.FLAG_MUTABLE)

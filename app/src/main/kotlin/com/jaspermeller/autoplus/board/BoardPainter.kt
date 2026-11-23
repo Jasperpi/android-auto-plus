@@ -77,6 +77,15 @@ class BoardPainter(
   private var flashUntil = 0L
   private var flashScene: Any? = null
 
+  /**
+   * Taps are ignored until this time. Whenever the set of signs changes, the next sign can
+   * appear right under a finger that is still coming down for a second tap: a double tap on a
+   * conversation would land on "Yes", a hurried double tap on Cancel on "No". So for a moment
+   * after any change of layout the board takes no taps, until the driver can have seen it.
+   */
+  private var deafUntil = 0L
+  private var lastLayout: Any? = null
+
   /** Where the tappable signs were on the last frame, for tests and for hit testing. */
   val targetBoxes: List<RectF> get() = targets.map { RectF(it.box) }
 
@@ -90,29 +99,62 @@ class BoardPainter(
     animating = false
     targets.clear()
 
+    // Covers changes nobody tapped for too: a countdown running out, a readout failing.
+    val layout = layoutOf(board.scene)
+    if (layout != lastLayout) {
+      if (lastLayout != null) deafUntil = max(deafUntil, frame.now + SETTLE_MS)
+      lastLayout = layout
+    }
+
     canvas.drawColor(colors.ground)
     val safe = if (frame.safe.isEmpty) Rect(0, 0, frame.width, frame.height) else frame.safe
     val area = RectF(safe).apply { inset(MARGIN * dp, MARGIN * dp) }
     // Smaller than this and no sign could be read or pressed, so the ground is all there is:
-    // a blank board is honest, a board of clipped fragments is not.
-    if (area.width() < MIN_WIDTH * dp || area.height() < MIN_HEIGHT * dp) return false
+    // a blank board is honest, a board of clipped fragments is not. What "too small" means
+    // depends on what has to fit: the setup notice is one sign; a narrow board stacks its signs
+    // and needs the height for all of them, the words of a reply above all.
+    val least = when {
+      board.scene == Scene.Gantry && !board.ready -> MIN_HEIGHT_NOTICE
+      area.width() < SIDE_BY_SIDE * dp -> MIN_HEIGHT_STACKED
+      else -> MIN_HEIGHT
+    }
+    if (area.width() < MIN_WIDTH * dp || area.height() < least * dp) return false
 
     when (val scene = board.scene) {
       Scene.Gantry -> if (board.ready) gantry(canvas, area, board) else setup(canvas, area)
       is Scene.Thread -> thread(canvas, area, board, scene)
     }
-    flash(canvas, board.scene::class)
+    flash(canvas, layout)
     return animating
   }
 
   /** Runs the sign under the point, if any. */
   fun tap(x: Float, y: Float, now: Long, board: BoardModel): Boolean {
+    if (now < deafUntil) return false
     val hit = targets.lastOrNull { it.box.contains(x, y) } ?: return false
     flashBox = RectF(hit.box)
     flashUntil = now + FLASH_MS
-    flashScene = board.scene::class
+    flashScene = layoutOf(board.scene)
+    val before = layoutOf(board.scene)
     hit.act()
+    // The signs under the finger are about to change, before the next frame is even painted.
+    if (layoutOf(board.scene) != before) deafUntil = now + SETTLE_MS
     return true
+  }
+
+  /**
+   * Which arrangement of signs a scene shows. Reading and Ready share one on purpose, so the
+   * end of a readout never swallows a tap on Reply.
+   */
+  private fun layoutOf(scene: Scene): Any = when (scene) {
+    Scene.Gantry -> Scene.Gantry
+    is Scene.Thread -> when (scene.phase) {
+      Phase.Reading, Phase.Ready -> Phase.Ready
+      is Phase.Listening -> Phase.Listening::class
+      is Phase.Confirm -> Phase.Confirm::class
+      Phase.Sent -> Phase.Sent
+      is Phase.Trouble -> Phase.Trouble::class
+    }
   }
 
   // ---------------------------------------------------------------- scenes
@@ -129,7 +171,7 @@ class BoardPainter(
     val talks = board.conversations
     val gap = GAP * dp
     // Side by side needs real width; a small card stacks the two instead of squeezing both.
-    val wide = area.width() >= area.height() * 1.3f && area.width() >= 560 * dp
+    val wide = area.width() >= area.height() * 1.3f && area.width() >= SIDE_BY_SIDE * dp
     val playing = RectF()
     val inbox = RectF()
     if (wide) {
@@ -443,11 +485,12 @@ class BoardPainter(
   /** Splits the space under the header into the words and the choices beside (or under) them. */
   private fun split(box: RectF): Pair<RectF, RectF> {
     val gap = GAP * dp
-    return if (box.width() >= 560 * dp) {
+    return if (box.width() >= SIDE_BY_SIDE * dp) {
       val side = (box.width() * 0.3f).coerceIn(180 * dp, 320 * dp)
       RectF(box.left, box.top, box.right - side - gap, box.bottom) to RectF(box.right - side, box.top, box.right, box.bottom)
     } else {
-      val bottom = (box.height() * 0.4f).coerceAtLeast(84 * dp).coerceAtMost(box.height() * 0.6f)
+      // The words keep the larger share: they are what the driver has to check before it sends.
+      val bottom = (box.height() * 0.4f).coerceAtLeast(84 * dp).coerceAtMost(box.height() * 0.45f)
       RectF(box.left, box.top, box.right, box.bottom - bottom - gap) to RectF(box.left, box.bottom - bottom, box.right, box.bottom)
     }
   }
@@ -563,10 +606,18 @@ class BoardPainter(
     /** The smallest area, in dp inside the margins, the board will draw on. */
     const val MIN_WIDTH = 300f
     const val MIN_HEIGHT = 170f
+    const val MIN_HEIGHT_STACKED = 280f
+    const val MIN_HEIGHT_NOTICE = 96f
+
+    /** Narrower than this, signs stack instead of sitting side by side. */
+    const val SIDE_BY_SIDE = 560f
 
     /** The least height, in dp, at which the music sign can carry its controls under its legend. */
     const val STACKED = 190f
     const val FLASH_MS = 180L
+
+    /** How long the board ignores taps after its signs change. */
+    const val SETTLE_MS = 500L
     private val NIGHT_COVER = PorterDuffColorFilter(0xFFA8A8A8.toInt(), PorterDuff.Mode.MULTIPLY)
   }
 }

@@ -41,7 +41,18 @@ class BoardModelTest {
 
     assertEquals(Phase.Ready, phase)
     assertEquals(listOf("a"), signals.heardKeys)
-    assertEquals("heard only as far as the snapshot that was read", listOf(maya.latestAt), signals.heardUpTo)
+  }
+
+  @Test
+  fun aThreadCutDownToItsLastFewMessagesIsNotMarkedRead() {
+    val long = talk("l", "Maya", "one", "two", "three", "four", "five", "six", "seven")
+    board.open(long)
+    assertTrue(speaker.said.single().startsWith("7 messages from Maya. Here are the last 5."))
+
+    speaker.finish()
+
+    assertEquals(Phase.Ready, phase)
+    assertTrue("two messages were never spoken, so the phone keeps them unread", signals.heardKeys.isEmpty())
   }
 
   @Test

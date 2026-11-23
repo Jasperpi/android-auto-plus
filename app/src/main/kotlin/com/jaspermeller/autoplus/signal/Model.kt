@@ -51,8 +51,9 @@ interface Signals {
   fun reply(key: String, text: String): Boolean
 
   /**
-   * The driver has heard this conversation read out, up to the message sent at [upTo], so the
-   * phone can stop showing it as unread. A message that arrived after that was not heard.
+   * The driver has heard [talk] read out in full, so the phone can stop showing it as unread.
+   * If the conversation now holds anything else (a message arrived meanwhile), it was not all
+   * heard and nothing is marked.
    */
-  fun heard(key: String, upTo: Long)
+  fun heard(talk: Conversation)
 }

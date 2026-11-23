@@ -188,8 +188,8 @@ class BoardScreen(
       } catch (refused: RuntimeException) {
         try {
           target.lockCanvas(null)
-        } catch (gone: RuntimeException) {
-          // The car was unplugged between the check and the lock.
+        } catch (gone: Exception) {
+          // The car was unplugged between the check and the lock, or the surface has no buffer to give.
           null
         }
       }

@@ -42,12 +42,9 @@ class FakeSignals : Signals {
     return true
   }
 
-  val heardUpTo = ArrayList<Long>()
-
-  override fun heard(key: String, upTo: Long) {
-    heardKeys += key
-    heardUpTo += upTo
-    talks = talks.filter { it.key != key }
+  override fun heard(talk: Conversation) {
+    heardKeys += talk.key
+    talks = talks.filter { it.key != talk.key }
   }
 }
 

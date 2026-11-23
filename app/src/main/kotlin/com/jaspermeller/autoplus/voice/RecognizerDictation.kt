@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -53,13 +54,35 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
   /** Bumped for every recognizer started, so a late callback from an old one is ignored. */
   private var session = 0
 
-  private val wrapUp = Runnable { recognizer?.stopListening() }
+  /**
+   * A ringing or connected call ends the round and drops what was heard: "Hello?" said to the
+   * caller must never become a text message. The phone's audio mode says a call is on more
+   * plainly than audio focus does, which the recognizer itself may also take.
+   */
+  private val callWatch = AudioManager.OnModeChangedListener { mode ->
+    if (mode != AudioManager.MODE_NORMAL) finish(Heard.Silence)
+  }
+  private var watchingCalls = false
+  private var began = 0L
+
+  /**
+   * Time is up: end the microphone feed first, so a recognizer that waits for the end of its
+   * audio gets one, then ask for what it has.
+   */
+  private val wrapUp = Runnable {
+    feed?.close()
+    recognizer?.stopListening()
+  }
   private val giveUp = Runnable { finish(heardOr(null)) }
 
   override fun listen(partial: (String) -> Unit, level: (Float) -> Unit, done: (Heard) -> Unit) {
     cancel()
     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
       done(Heard.Blocked("Allow the microphone in Auto++ on your phone"))
+      return
+    }
+    if (audio.mode != AudioManager.MODE_NORMAL) {
+      done(Heard.Blocked("Cannot listen during a call"))
       return
     }
     val onDevice = SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
@@ -70,14 +93,21 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
 
     // Quiet the cabin before opening the microphone. With music still playing, the recognizer
     // would hear the lyrics as the driver's words and the countdown would send them.
-    val quiet = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+    lateinit var quiet: AudioFocusRequest
+    quiet = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
         .setAudioAttributes(AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ASSISTANT)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build())
         .setOnAudioFocusChangeListener({ change ->
-          // Something else has taken the sound for good (music started elsewhere): stop listening.
-          if (change == AudioManager.AUDIOFOCUS_LOSS) finish(Heard.Silence)
+          // Something else has taken the sound: stop listening and drop what was heard, so
+          // words meant for an assistant or a caller never become a message. The first moments
+          // are excused for a passing loss, because the recognizer may take the sound itself as
+          // it starts. A callback for a round that is already over is ignored.
+          val settled = SystemClock.elapsedRealtime() - began > FOCUS_GRACE_MS
+          val lost = change == AudioManager.AUDIOFOCUS_LOSS ||
+              (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT && settled)
+          if (focus === quiet && lost) finish(Heard.Silence)
         }, main)
         .build()
     if (audio.requestAudioFocus(quiet) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
@@ -85,6 +115,9 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
       return
     }
     focus = quiet
+    began = SystemClock.elapsedRealtime()
+    audio.addOnModeChangedListener(context.mainExecutor, callWatch)
+    watchingCalls = true
     this.partial = partial
     this.level = level
     this.done = done
@@ -130,8 +163,15 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
             stopRecognizer()
             start(onDevice = false)
           }
-          error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-              finish(Heard.Blocked("Allow the microphone in Auto++ on your phone"))
+          // With the permission granted, this means Android would not let an app that is not
+          // on the phone's screen use a microphone at all. Saying "allow the microphone" would
+          // send the driver to a setting that is already on.
+          error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> finish(Heard.Blocked(
+              if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                "Android blocked the microphone here. Use a ready-made reply"
+              } else {
+                "Allow the microphone in Auto++ on your phone"
+              }))
           else -> finish(heardOr(null))
         }
       }
@@ -191,6 +231,10 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
     stopRecognizer()
     focus?.let(audio::abandonAudioFocusRequest)
     focus = null
+    if (watchingCalls) {
+      audio.removeOnModeChangedListener(callWatch)
+      watchingCalls = false
+    }
   }
 
   /** Ends the current recognizer and its microphone but keeps the round open, for the fallback. */
@@ -217,6 +261,7 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
 
   private companion object {
     const val WRAP_UP_MS = 12_000L
+    const val FOCUS_GRACE_MS = 1_500L
     const val GIVE_UP_MS = 16_000L
     val NO_LANGUAGE = setOf(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)
   }

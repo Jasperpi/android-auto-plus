@@ -95,6 +95,20 @@ class TtsSpeakerTest {
   }
 
   @Test
+  fun anEngineThatDiesMidSentenceIsNoticedAndTheReadoutFails() {
+    speaker.say("hello") { ended += it }
+    engineReports(thenIdle = false)
+    // The speech service is killed: its callbacks never arrive.
+    engine().setOnUtteranceProgressListener(null)
+    looper.idle()
+    assertTrue(ended.isEmpty())
+
+    looper.idleFor(java.time.Duration.ofSeconds(30))
+
+    assertEquals(listOf(Spoken.FAILED), ended)
+  }
+
+  @Test
   fun aRefusedHoldOnTheSoundFailsTheReadoutInsteadOfTalkingOverACall() {
     shadowOf(context.getSystemService(AudioManager::class.java)).setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
     speaker.say("hello") { ended += it }

@@ -32,6 +32,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.time.Duration
 
 /**
  * Drives the car screen the way Android Auto does, through the Car App Library's own test host:
@@ -59,6 +60,9 @@ class BoardScreenTest {
   }
 
   private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+  /** Long enough after a change of signs for the board to take taps again. */
+  private fun settle() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
 
   private fun surface(width: Int, height: Int): SurfaceContainer {
     val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
@@ -116,6 +120,24 @@ class BoardScreenTest {
   }
 
   @Test
+  fun aSecondTapRightAfterOpeningAConversationIsIgnored() {
+    controller.moveToState(Lifecycle.State.RESUMED)
+    val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!
+    callback.onSurfaceAvailable(surface(1280, 720))
+    idle()
+
+    callback.onClick(1000f, 150f)
+    idle()
+    // The same finger, still coming down: it now lands on the reply signs.
+    callback.onClick(300f, 330f)
+    callback.onClick(1000f, 500f)
+    idle()
+
+    assertEquals(false, dictation.listening)
+    assertEquals(1, speaker.said.size)
+  }
+
+  @Test
   fun aTapOnBareGroundDoesNothing() {
     controller.moveToState(Lifecycle.State.RESUMED)
     val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!
@@ -137,6 +159,7 @@ class BoardScreenTest {
     callback.onClick(1000f, 150f)
     idle()
     speaker.finish()
+    settle()
     callback.onClick(300f, 330f)
     idle()
     assertTrue(dictation.listening)
@@ -157,6 +180,7 @@ class BoardScreenTest {
     callback.onClick(1000f, 150f)
     idle()
     speaker.finish()
+    settle()
     // "Reply" is the wide green sign under the header.
     callback.onClick(300f, 330f)
     idle()
