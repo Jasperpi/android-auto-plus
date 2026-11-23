@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: a stand-in messaging app and music player, driven from adb, so the board
+     can be exercised end to end without waiting for a real text or opening Spotify. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <receiver
+        android:name=".demo.DemoReceiver"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="com.jaspermeller.autoplus.demo.MESSAGE" />
+        <action android:name="com.jaspermeller.autoplus.demo.PLAY" />
+        <action android:name="com.jaspermeller.autoplus.demo.STOP" />
+      </intent-filter>
+    </receiver>
+  </application>
+
+</manifest>
