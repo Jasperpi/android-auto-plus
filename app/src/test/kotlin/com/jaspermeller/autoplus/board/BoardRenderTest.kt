@@ -14,6 +14,7 @@ import com.jaspermeller.autoplus.FakeDictation
 import com.jaspermeller.autoplus.FakeSignals
 import com.jaspermeller.autoplus.FakeSpeaker
 import com.jaspermeller.autoplus.FakeTimer
+import com.jaspermeller.autoplus.signal.Message
 import com.jaspermeller.autoplus.signal.NowPlaying
 import com.jaspermeller.autoplus.talk
 import com.jaspermeller.autoplus.voice.Heard
@@ -301,8 +302,61 @@ class BoardRenderTest {
     dictation.hear(Heard.Words("On my way"))
     paintAt(1010)
 
-    for (box in painter.targetBoxes) assertFalse(painter.tap(box.centerX(), box.centerY(), 1100, board))
+    // Back, Cancel, Say it again, Send now. Only the way out takes a tap this soon.
+    val boxes = painter.targetBoxes
+    for (box in listOf(boxes[2], boxes[3])) assertFalse(painter.tap(box.centerX(), box.centerY(), 1100, board))
     assertTrue(signals.sent.isEmpty())
+    assertTrue("still counting down", (board.scene as Scene.Thread).phase is Phase.Confirm)
+  }
+
+  @Test
+  fun aReplyHeldBackForANewMessageAlsoPausesTheSigns() {
+    board.open(signals.talks.first())
+    paintAt(0)
+    paintAt(1000)
+    val firstReply = painter.targetBoxes[3]
+    // A new message lands in the thread while the reply signs are up.
+    val maya = signals.talks.first()
+    signals.talks = listOf(maya.copy(messages = maya.messages + Message("Maya Okafor", "actually don't come", 99L))) + signals.talks.drop(1)
+
+    assertTrue(painter.tap(firstReply.centerX(), firstReply.centerY(), 1000, board))
+    paintAt(1010)
+    // The same signs, but for a thread that now says something else.
+    assertFalse(painter.tap(firstReply.centerX(), firstReply.centerY(), 1100, board))
+
+    assertTrue(signals.sent.isEmpty())
+  }
+
+  @Test
+  fun cancelWorksTheInstantTheWordsAppear() {
+    board.open(signals.talks.first())
+    board.reply()
+    paintAt(0)
+    paintAt(1000)
+    val cancel = painter.targetBoxes[1]
+    dictation.hear(Heard.Words("wrong words"))
+    paintAt(1010)
+
+    // The finger was already on its way: it lands a tenth of a second after the signs changed.
+    assertTrue(painter.tap(cancel.centerX(), cancel.centerY(), 1100, board))
+
+    assertEquals(Phase.Ready, (board.scene as Scene.Thread).phase)
+    timer.advance(10_000)
+    assertTrue("a Cancel that ignored the tap would have let the countdown send", signals.sent.isEmpty())
+  }
+
+  @Test
+  fun goBackWorksTheInstantTroubleAppears() {
+    board.open(signals.talks.first())
+    board.reply()
+    paintAt(0)
+    paintAt(1000)
+    val wayOut = painter.targetBoxes[1]
+    dictation.hear(Heard.Silence)
+    paintAt(1010)
+
+    assertTrue(painter.tap(wayOut.centerX(), wayOut.centerY(), 1100, board))
+    assertEquals(Phase.Ready, (board.scene as Scene.Thread).phase)
   }
 
   @Test

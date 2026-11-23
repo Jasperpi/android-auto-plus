@@ -27,6 +27,7 @@ class Inbox(private val changed: () -> Unit = {}) {
   }
 
   fun clear() {
+    departed.clear()
     if (live.isEmpty()) return
     live.clear()
     changed()

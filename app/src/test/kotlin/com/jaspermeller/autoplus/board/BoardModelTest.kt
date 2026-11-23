@@ -101,7 +101,32 @@ class BoardModelTest {
     assertTrue("nothing is sent past a message the driver has not heard", signals.sent.isEmpty())
     assertEquals(updated, (board.scene as Scene.Thread).talk)
     assertEquals(Phase.Reading, phase)
+    assertTrue("the driver is told first that nothing went out", speaker.said.last().startsWith("Your reply was not sent. 3 messages from Maya."))
     assertTrue(speaker.said.last().endsWith("actually don't come."))
+  }
+
+  @Test
+  fun tappingAgainAfterAReplyWasHeldBackCannotAnswerTheNewMessageUnheard() {
+    board.open(maya)
+    speaker.finish()
+    val updated = maya.copy(messages = maya.messages + Message("Maya", "actually don't come", 99L))
+    signals.talks = listOf(updated, dad)
+    board.quick("On my way")
+    val stopsBefore = speaker.stops
+
+    // The signs did not change to "Sent", so the driver taps the same reply again.
+    board.quick("On my way")
+    board.reply()
+
+    assertTrue(signals.sent.isEmpty())
+    assertEquals("the new message is still being read", Phase.Reading, phase)
+    assertEquals("and was not cut off", stopsBefore, speaker.stops)
+    assertFalse(dictation.listening)
+
+    // Once it has been heard, replying works as usual.
+    speaker.finish()
+    board.quick("OK")
+    assertEquals(listOf("a" to "OK"), signals.sent)
   }
 
   @Test
@@ -117,6 +142,7 @@ class BoardModelTest {
 
     assertTrue(signals.sent.isEmpty())
     assertEquals(Phase.Reading, phase)
+    assertTrue(speaker.said.last().startsWith("Your reply was not sent. "))
     assertTrue(speaker.said.last().endsWith("make it seven."))
   }
 

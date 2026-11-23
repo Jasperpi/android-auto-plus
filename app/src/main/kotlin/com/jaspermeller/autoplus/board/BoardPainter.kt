@@ -47,7 +47,7 @@ class BoardPainter(
     private val setupHint: String = "Open Auto++ on your phone and turn on notification access.",
 ) {
 
-  private class Target(val box: RectF, val act: () -> Unit)
+  private class Target(val box: RectF, val wayOut: Boolean, val act: () -> Unit)
 
   /** A sign that is also a button. */
   private class Plate(
@@ -56,6 +56,12 @@ class BoardPainter(
       val edge: Int,
       val ink: Int,
       val weight: Float = 1f,
+      /**
+       * A sign that only ever backs out (Cancel, Go back). It takes taps even in the moment
+       * after the signs change: the worst a stray tap can do there is drop a reply, while a
+       * Cancel that silently ignored a tap would let the countdown send it.
+       */
+      val wayOut: Boolean = false,
       val act: () -> Unit,
   )
 
@@ -140,8 +146,8 @@ class BoardPainter(
 
   /** Runs the sign under the point, if any. */
   fun tap(x: Float, y: Float, now: Long, board: BoardModel): Boolean {
-    if (now < deafUntil) return false
     val hit = targets.lastOrNull { it.box.contains(x, y) } ?: return false
+    if (now < deafUntil && !hit.wayOut) return false
     flashBox = RectF(hit.box)
     flashUntil = now + FLASH_MS
     flashScene = layoutOf(board.scene)
@@ -158,7 +164,9 @@ class BoardPainter(
    */
   private fun layoutOf(scene: Scene): Any = when (scene) {
     Scene.Gantry -> Scene.Gantry
-    is Scene.Thread -> when (scene.phase) {
+    // The conversation is part of it: the same signs for another thread, or for this thread
+    // with a new message in it, are not the signs the driver was looking at.
+    is Scene.Thread -> scene.talk to when (scene.phase) {
       Phase.Reading, Phase.Ready -> Phase.Ready
       is Phase.Listening -> Phase.Listening::class
       is Phase.Confirm -> Phase.Confirm::class
@@ -405,13 +413,13 @@ class BoardPainter(
       is Phase.Listening -> {
         val (wordsBox, side) = split(below)
         speech(c, wordsBox, phase.words.ifBlank { "Say your reply" })
-        stack(c, side, listOf(Plate("Cancel", colors.red, colors.white, colors.white) { board.cancelReply() }))
+        stack(c, side, listOf(Plate("Cancel", colors.red, colors.white, colors.white, wayOut = true) { board.cancelReply() }))
       }
       is Phase.Confirm -> {
         val (wordsBox, side) = split(below)
         speech(c, wordsBox, phase.words)
         stack(c, side, listOf(
-            Plate("Cancel", colors.red, colors.white, colors.white) { board.cancelReply() },
+            Plate("Cancel", colors.red, colors.white, colors.white, wayOut = true) { board.cancelReply() },
             Plate("Say it again", colors.paper, colors.ink, colors.ink) { board.reply() },
             Plate("Send now", colors.green, colors.white, colors.white) { board.sendNow() },
         ))
@@ -426,7 +434,7 @@ class BoardPainter(
         kit.sign(c, wordsBox, colors.orange, colors.ink)
         kit.paragraph(c, kit.inside(wordsBox), phase.what, (wordsBox.height() * 0.2f).coerceIn(24 * dp, 40 * dp), colors.ink)
         val plates = ArrayList<Plate>()
-        plates += Plate("Go back", colors.paper, colors.ink, colors.ink) { board.cancelReply() }
+        plates += Plate("Go back", colors.paper, colors.ink, colors.ink, wayOut = true) { board.cancelReply() }
         if (phase.canRetry) plates += Plate("Try again", colors.paper, colors.ink, colors.ink) { board.reply() }
         stack(c, side, plates)
       }
@@ -495,7 +503,7 @@ class BoardPainter(
   private fun plate(c: Canvas, box: RectF, plate: Plate) {
     kit.sign(c, box, plate.ground, plate.edge)
     kit.centered(c, box, plate.label, (box.height() * 0.24f).coerceIn(20 * dp, 38 * dp), plate.ink)
-    target(box, plate.act)
+    target(box, plate.wayOut, plate.act)
   }
 
   /** The driver's own words, large, on a regulatory sign. */
@@ -604,8 +612,8 @@ class BoardPainter(
 
   // ---------------------------------------------------------------- plumbing
 
-  private fun target(box: RectF, act: () -> Unit) {
-    targets += Target(RectF(box), act)
+  private fun target(box: RectF, wayOut: Boolean = false, act: () -> Unit) {
+    targets += Target(RectF(box), wayOut, act)
   }
 
   /** The car only reports a finished tap, so the sign itself has to say it was pressed. */

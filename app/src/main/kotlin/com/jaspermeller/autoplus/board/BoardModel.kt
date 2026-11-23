@@ -72,23 +72,35 @@ class BoardModel(
    */
   private var speaking = false
 
+  /**
+   * The thread whose new message has to be heard out before any reply goes to it. Set when a
+   * reply was held back because something new had arrived; a second tap on the same reply
+   * must not cut that message off and answer it unheard.
+   */
+  private var mustHear: String? = null
+
   /** The phone's messages or music changed. */
   fun signalsChanged() {
     if (firstShown >= conversations.size) firstShown = 0
     onChange()
   }
 
-  fun open(talk: Conversation) {
+  fun open(talk: Conversation) = read(talk, lead = "")
+
+  /** Reads [talk] aloud, after [lead] when there is something the driver must be told first. */
+  private fun read(talk: Conversation, lead: String) {
     val mine = leave()
+    if (lead.isNotEmpty()) mustHear = talk.key
     scene = Scene.Thread(talk, Phase.Reading)
     onChange()
     val readout = Readout.of(talk)
     speaking = true
-    speaker.say(readout.words) { how ->
+    speaker.say(lead + readout.words) { how ->
       speaking = false
       if (mine != turn) return@say
       when (how) {
         Spoken.FINISHED -> {
+          if (mustHear == talk.key) mustHear = null
           // Only a thread spoken in full counts as heard. One that was cut down to its last
           // few messages stays unread on the phone.
           if (readout.complete) signals.heard(talk)
@@ -111,6 +123,7 @@ class BoardModel(
 
   fun back() {
     leave()
+    mustHear = null
     scene = Scene.Gantry
     onChange()
   }
@@ -120,6 +133,7 @@ class BoardModel(
     if (!thread.talk.canReply) return
     // A second tap landing on the old signs must not restart listening or resend.
     if (thread.phase is Phase.Listening || thread.phase == Phase.Sent) return
+    if (mustHear == thread.talk.key) return
     val mine = leave()
     phase(Phase.Listening())
     dictation.listen(
@@ -143,6 +157,7 @@ class BoardModel(
     // Ready-made lines are only on the board while reading or just after; a tap that arrives
     // later is a double tap on signs that have already gone, and must not send again.
     if (thread.phase != Phase.Reading && thread.phase != Phase.Ready) return
+    if (mustHear == thread.talk.key) return
     leave()
     send(thread.talk, text)
   }
@@ -186,6 +201,7 @@ class BoardModel(
   /** The surface is gone for good (car unplugged, phone screen closed): go quiet. */
   fun close() {
     leave()
+    mustHear = null
     scene = Scene.Gantry
     firstShown = 0
   }
@@ -217,7 +233,8 @@ class BoardModel(
     // message included. It also covers an app that reuses one notification for another chat.
     val live = signals.conversations().firstOrNull { it.key == talk.key }
     if (live != null && !live.sameWords(talk)) {
-      open(live)
+      // Said first, or the readout that follows would sound like an answer to a reply that never went.
+      read(live, lead = NOT_SENT)
       return
     }
     val mine = turn
@@ -257,6 +274,7 @@ class BoardModel(
     const val COUNTDOWN = 4
     const val TICK_MS = 1000L
     const val SENT_MS = 1400L
+    const val NOT_SENT = "Your reply was not sent. "
 
     val QUICK_REPLIES = listOf("On my way", "Driving, talk soon", "Yes", "No")
   }
