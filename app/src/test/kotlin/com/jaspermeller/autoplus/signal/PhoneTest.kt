@@ -72,7 +72,7 @@ class PhoneTest {
   fun aReplyReachesTheMessagingAppThroughItsOwnAction() {
     post("a")
 
-    assertTrue(phone.reply("a", "On my way"))
+    assertTrue(phone.reply(phone.conversations().single(), "On my way"))
     deliver()
 
     assertEquals(listOf<String?>("On my way"), replies)
@@ -120,20 +120,50 @@ class PhoneTest {
   @Test
   fun aReplyStillWorksAfterTheConversationWasHeard() {
     post("a")
-    phone.heard(phone.conversations().single())
+    val maya = phone.conversations().single()
+    phone.heard(maya)
 
-    assertTrue(phone.reply("a", "Yes"))
+    assertTrue(phone.reply(maya, "Yes"))
     deliver()
 
     assertEquals(listOf<String?>("Yes"), replies)
   }
 
   @Test
+  fun aReplyNeverTravelsARouteThatNowBelongsToAnotherConversation() {
+    post("a")
+    val maya = phone.conversations().single()
+    phone.heard(maya)
+    // The app reuses the same notification for Dad, and that notification then goes away too.
+    val dadsRoute = phone.inbox.find("a")!!.reply
+    phone.inbox.put(Reading(Conversation("a", "Dad", "Messages", false, listOf(Message("Dad", "Call me", 200L)), true), dadsRoute, null))
+    phone.inbox.remove("a")
+
+    assertFalse("the driver answered Maya; Dad must not get it", phone.reply(maya, "On my way"))
+    deliver()
+
+    assertTrue(replies.isEmpty())
+  }
+
+  @Test
+  fun anAnsweredThreadsRouteIsNotKeptForASecondUse() {
+    post("a")
+    val maya = phone.conversations().single()
+
+    assertTrue(phone.reply(maya, "On my way"))
+    assertFalse(phone.reply(maya, "On my way"))
+    deliver()
+
+    assertEquals(listOf<String?>("On my way"), replies)
+  }
+
+  @Test
   fun aReplyWithNowhereToGoIsRefused() {
     post("a", withReply = false)
+    val neverSeen = Conversation("never-seen", "Nobody", "Messages", false, listOf(Message("Nobody", "hi", 1L)), true)
 
-    assertFalse(phone.reply("a", "Yes"))
-    assertFalse(phone.reply("never-seen", "Yes"))
+    assertFalse(phone.reply(phone.conversations().single(), "Yes"))
+    assertFalse(phone.reply(neverSeen, "Yes"))
     deliver()
 
     assertTrue(replies.isEmpty())
@@ -144,7 +174,7 @@ class PhoneTest {
     post("a")
     pending("test.REPLY", mutable = true).cancel()
 
-    assertFalse(phone.reply("a", "Yes"))
+    assertFalse(phone.reply(phone.conversations().single(), "Yes"))
   }
 
   @Test

@@ -60,6 +60,12 @@ class BoardModel(
   val nowPlaying: NowPlaying? get() = signals.nowPlaying()
 
   /**
+   * True while the open thread has a new message that must be heard before any reply. The
+   * board shows that in place of the reply signs, which would otherwise look live and do nothing.
+   */
+  val replyHeld: Boolean get() = mustHear != null && (scene as? Scene.Thread)?.talk?.key == mustHear
+
+  /**
    * Every transition bumps this. Speech, dictation and timers answer later, and an answer
    * carrying an old turn belongs to a scene the driver has already left.
    */
@@ -107,7 +113,11 @@ class BoardModel(
           phase(Phase.Ready)
         }
         Spoken.INTERRUPTED -> phase(Phase.Ready)
-        Spoken.FAILED -> phase(Phase.Trouble("Could not read this aloud", canRetry = false))
+        // After a held-back reply, speech was the only notice that it did not go; when the
+        // speech itself fails, the board has to carry it.
+        Spoken.FAILED -> phase(Phase.Trouble(
+            if (lead.isEmpty()) "Could not read this aloud" else "Reply not sent. Could not read the new message",
+            canRetry = false))
       }
     }
   }
@@ -171,7 +181,9 @@ class BoardModel(
 
   /** Drops the reply in progress and returns to the conversation. */
   fun cancelReply() {
-    if (scene !is Scene.Thread) return
+    val thread = scene as? Scene.Thread ?: return
+    // A tap on a Cancel that has not been repainted yet must not turn "Sent" back into choices.
+    if (thread.phase == Phase.Sent) return
     leave()
     phase(Phase.Ready)
   }
@@ -195,7 +207,14 @@ class BoardModel(
    */
   fun pause() {
     val phase = (scene as? Scene.Thread)?.phase ?: return
-    if (phase is Phase.Listening || phase is Phase.Confirm) cancelReply()
+    if (phase !is Phase.Listening && phase !is Phase.Confirm) return
+    cancelReply()
+    // A driver who left during "Sending in 3" trusts the countdown. The words were complete and
+    // did not go, so the car says so; the board they would have read it on is not there.
+    if (phase is Phase.Confirm) {
+      speaking = true
+      speaker.say(NOT_SENT.trim()) { speaking = false }
+    }
   }
 
   /** The surface is gone for good (car unplugged, phone screen closed): go quiet. */
@@ -238,7 +257,7 @@ class BoardModel(
       return
     }
     val mine = turn
-    if (!signals.reply(talk.key, text)) {
+    if (!signals.reply(talk, text)) {
       phase(Phase.Trouble("Could not send. Reply from your phone when you stop", canRetry = false))
       return
     }

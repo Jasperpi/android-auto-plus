@@ -115,7 +115,7 @@ class BoardPainter(
     targets.clear()
 
     // Covers changes nobody tapped for too: a countdown running out, a readout failing.
-    val layout = layoutOf(board.scene)
+    val layout = layoutOf(board)
     if (layout != lastLayout) {
       if (lastLayout != null) deafUntil = max(deafUntil, frame.now + SETTLE_MS)
       lastLayout = layout
@@ -150,11 +150,11 @@ class BoardPainter(
     if (now < deafUntil && !hit.wayOut) return false
     flashBox = RectF(hit.box)
     flashUntil = now + FLASH_MS
-    flashScene = layoutOf(board.scene)
-    val before = layoutOf(board.scene)
+    flashScene = layoutOf(board)
+    val before = layoutOf(board)
     hit.act()
     // The signs under the finger are about to change, before the next frame is even painted.
-    if (layoutOf(board.scene) != before) deafUntil = now + SETTLE_MS
+    if (layoutOf(board) != before) deafUntil = now + SETTLE_MS
     return true
   }
 
@@ -162,12 +162,12 @@ class BoardPainter(
    * Which arrangement of signs a scene shows. Reading and Ready share one on purpose, so the
    * end of a readout never swallows a tap on Reply.
    */
-  private fun layoutOf(scene: Scene): Any = when (scene) {
+  private fun layoutOf(board: BoardModel): Any = when (val scene = board.scene) {
     Scene.Gantry -> Scene.Gantry
     // The conversation is part of it: the same signs for another thread, or for this thread
     // with a new message in it, are not the signs the driver was looking at.
     is Scene.Thread -> scene.talk to when (scene.phase) {
-      Phase.Reading, Phase.Ready -> Phase.Ready
+      Phase.Reading, Phase.Ready -> if (board.replyHeld) "held" else Phase.Ready
       is Phase.Listening -> Phase.Listening::class
       is Phase.Confirm -> Phase.Confirm::class
       Phase.Sent -> Phase.Sent
@@ -362,7 +362,11 @@ class BoardPainter(
     fill.color = colors.white
     arrowGlyph(c, back.centerX(), back.centerY(), min(back.width(), back.height()) * 0.3f)
     c.drawRect(back.right, back.top, back.right + rule, back.bottom, fill)
-    target(RectF(head.left, head.top, back.right, head.bottom)) { board.back() }
+    // While a reply is being heard or counted down, the arrow is a way out like Cancel and
+    // takes a tap at once. Elsewhere it waits like any other sign, so a double tap on a
+    // conversation cannot open it and back straight out.
+    val replying = scene.phase is Phase.Listening || scene.phase is Phase.Confirm || scene.phase is Phase.Trouble
+    target(RectF(head.left, head.top, back.right, head.bottom), wayOut = replying) { board.back() }
 
     val size = (headH * 0.3f).coerceIn(26 * dp, 52 * dp)
     if (narrow) {
@@ -389,7 +393,16 @@ class BoardPainter(
       Phase.Reading, Phase.Ready -> {
         // The same signs stay put through reading and after it, so nothing moves under a finger.
         val again = Plate("Hear again", colors.blue, colors.white, colors.white) { board.hearAgain() }
-        if (!talk.canReply) {
+        if (board.replyHeld) {
+          // A reply was held back for a new message. Until that message has been heard out, no
+          // reply can go, so the reply signs come down and the board says why. Hear again stays
+          // where it always is.
+          val rowH = min(below.height(), 190 * dp)
+          val notice = RectF(below.left, below.top, below.left + (below.width() - gap) * 2f / 3f, below.top + rowH)
+          kit.sign(c, notice, colors.orange, colors.ink)
+          kit.paragraph(c, kit.inside(notice), "Reply not sent. Hear the new message first", (rowH * 0.2f).coerceIn(22 * dp, 38 * dp), colors.ink)
+          plate(c, RectF(notice.right + gap, below.top, below.right, below.top + rowH), again)
+        } else if (!talk.canReply) {
           plates(c, below, listOf(again))
         } else {
           val reply = Plate("Reply", colors.green, colors.white, colors.white, weight = 2f) { board.reply() }

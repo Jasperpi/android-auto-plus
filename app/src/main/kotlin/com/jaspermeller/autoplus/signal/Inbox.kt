@@ -26,6 +26,12 @@ class Inbox(private val changed: () -> Unit = {}) {
     changed()
   }
 
+  /** Drops [key] entirely, kept route included. */
+  fun forget(key: String) {
+    departed.remove(key)
+    if (live.remove(key) != null) changed()
+  }
+
   fun clear() {
     departed.clear()
     if (live.isEmpty()) return

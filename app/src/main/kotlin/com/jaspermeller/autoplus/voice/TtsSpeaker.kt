@@ -45,7 +45,10 @@ class TtsSpeaker(context: Context) : Speaker {
   override fun say(text: String, done: (Spoken) -> Unit) {
     stop()
     if (engine == null) {
-      engine = TextToSpeech(context) { status -> main.post { started(status) } }
+      // The callback names its own engine: a late answer from one already discarded is ignored.
+      lateinit var created: TextToSpeech
+      created = TextToSpeech(context) { status -> main.post { if (engine === created) started(status) } }
+      engine = created
     }
     if (ready) speak(text, done) else waiting = text to done
   }

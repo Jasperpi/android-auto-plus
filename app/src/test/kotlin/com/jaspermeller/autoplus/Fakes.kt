@@ -35,10 +35,10 @@ class FakeSignals : Signals {
     presses += "next"
   }
 
-  override fun reply(key: String, text: String): Boolean {
+  override fun reply(talk: Conversation, text: String): Boolean {
     if (!accepts) return false
-    sent += key to text
-    talks = talks.filter { it.key != key }
+    sent += talk.key to text
+    talks = talks.filter { it.key != talk.key }
     return true
   }
 

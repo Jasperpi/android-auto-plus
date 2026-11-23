@@ -51,8 +51,14 @@ class Phone(private val context: Context) : Signals {
 
   override fun next() = media.next()
 
-  override fun reply(key: String, text: String): Boolean {
-    val route = inbox.find(key)?.reply ?: return false
+  override fun reply(talk: Conversation, text: String): Boolean {
+    val key = talk.key
+    val reading = inbox.find(key) ?: return false
+    // The route is kept by notification key, and an app can reuse a key for another chat or
+    // add a message under it. A reply must only ever travel the route of the very
+    // conversation the driver answered, or it reaches the wrong person.
+    if (!reading.conversation.sameWords(talk)) return false
+    val route = reading.reply ?: return false
     val results = Bundle()
     // An action can carry other inputs beside the text box (a choice list); only the box gets the words.
     route.inputs.filter { it.allowFreeFormInput }.forEach { results.putCharSequence(it.resultKey, text) }
@@ -60,7 +66,8 @@ class Phone(private val context: Context) : Signals {
     RemoteInput.addResultsToIntent(route.inputs, fill, results)
     return try {
       route.intent.send(context, 0, fill)
-      inbox.remove(key)
+      // Answered: the thread leaves the board, and its route is not kept for a second use.
+      inbox.forget(key)
       true
     } catch (cancelled: PendingIntent.CanceledException) {
       false

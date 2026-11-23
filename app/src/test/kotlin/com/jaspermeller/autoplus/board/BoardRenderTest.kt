@@ -328,6 +328,63 @@ class BoardRenderTest {
   }
 
   @Test
+  fun theBackArrowWorksTheInstantTheWordsAppearToo() {
+    board.open(signals.talks.first())
+    board.reply()
+    paintAt(0)
+    paintAt(1000)
+    val arrow = painter.targetBoxes[0]
+    dictation.hear(Heard.Words("wrong words"))
+    paintAt(1010)
+
+    assertTrue(painter.tap(arrow.centerX(), arrow.centerY(), 1100, board))
+
+    assertEquals(Scene.Gantry, board.scene)
+    timer.advance(10_000)
+    assertTrue("backing out drops the reply", signals.sent.isEmpty())
+  }
+
+  @Test
+  fun aDoubleTapOnAConversationCannotOpenItAndBackStraightOut() {
+    // Outside a reply the arrow is an ordinary sign, and waits for the signs to settle.
+    val bitmap = Bitmap.createBitmap(420, 700, Bitmap.Config.ARGB_8888)
+    val frame = { now: Long -> Frame(420, 700, Rect(0, 0, 420, 700), 1f, night = false, now = now) }
+    signals.track = null
+    painter.paint(Canvas(bitmap), frame(0), board)
+    val sign = painter.targetBoxes.first()
+    assertTrue(painter.tap(sign.centerX(), sign.centerY(), 0, board))
+    painter.paint(Canvas(bitmap), frame(10), board)
+    val arrow = painter.targetBoxes[0]
+
+    assertFalse("the arrow waits like any other sign outside a reply", painter.tap(arrow.centerX(), arrow.centerY(), 100, board))
+    assertTrue(board.scene is Scene.Thread)
+  }
+
+  @Test
+  fun whileAReplyIsHeldTheReplySignsComeDownAndTheBoardSaysWhy() {
+    val maya = signals.talks.first()
+    board.open(maya)
+    speaker.finish()
+    // Heard, so it left the inbox; now it comes back with a new message in it.
+    signals.talks = listOf(maya.copy(messages = maya.messages + Message("Maya Okafor", "actually don't come", 99L)))
+    paintAt(0)
+    val hearAgain = painter.targetBoxes[2]
+
+    board.quick("On my way")
+    eachSurface("thread-held") {}
+    paintAt(2000)
+
+    // Back and Hear again are all that is left; no sign that would send.
+    assertEquals(2, painter.targetBoxes.size)
+    val now = painter.targetBoxes[1]
+    for ((was, isNow) in listOf(hearAgain.left to now.left, hearAgain.top to now.top, hearAgain.right to now.right, hearAgain.bottom to now.bottom)) {
+      assertEquals("Hear again keeps its place", was, isNow, 0.5f)
+    }
+    for (box in painter.targetBoxes.drop(1)) assertTrue(painter.tap(box.centerX(), box.centerY(), 3000, board))
+    assertTrue(signals.sent.isEmpty())
+  }
+
+  @Test
   fun cancelWorksTheInstantTheWordsAppear() {
     board.open(signals.talks.first())
     board.reply()

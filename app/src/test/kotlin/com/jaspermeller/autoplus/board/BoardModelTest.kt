@@ -194,6 +194,87 @@ class BoardModelTest {
   }
 
   @Test
+  fun leavingDuringTheCountdownSaysTheReplyDidNotGo() {
+    board.open(maya)
+    board.reply()
+    dictation.hear(Heard.Words("On my way"))
+    timer.advance(1000)
+
+    board.pause()
+
+    assertEquals("Your reply was not sent.", speaker.said.last())
+    timer.advance(10_000)
+    assertTrue(signals.sent.isEmpty())
+  }
+
+  @Test
+  fun leavingWhileStillListeningDropsTheReplyWithoutAnAnnouncement() {
+    board.open(maya)
+    speaker.finish()
+    board.reply()
+    val saidBefore = speaker.said.size
+
+    board.pause()
+
+    assertEquals("nothing had been composed yet", saidBefore, speaker.said.size)
+  }
+
+  @Test
+  fun unpluggingStopsTheNotSentAnnouncementToo() {
+    board.open(maya)
+    board.reply()
+    dictation.hear(Heard.Words("On my way"))
+    board.pause()
+    val stopsBefore = speaker.stops
+
+    board.close()
+
+    assertEquals(stopsBefore + 1, speaker.stops)
+  }
+
+  @Test
+  fun aHeldReplyThatCannotBeReadOutSaysOnTheBoardThatItWasNotSent() {
+    board.open(maya)
+    speaker.finish()
+    signals.talks = listOf(maya.copy(messages = maya.messages + Message("Maya", "actually don't come", 99L)), dad)
+    board.quick("On my way")
+
+    // The phone will not give up the sound (a call): the spoken notice never happens.
+    speaker.finish(Spoken.FAILED)
+
+    assertEquals(Phase.Trouble("Reply not sent. Could not read the new message", canRetry = false), phase)
+    assertTrue(board.replyHeld)
+  }
+
+  @Test
+  fun aHeldReplyIsReleasedOnceTheNewMessageHasBeenHeard() {
+    board.open(maya)
+    speaker.finish()
+    signals.talks = listOf(maya.copy(messages = maya.messages + Message("Maya", "actually don't come", 99L)), dad)
+    board.quick("On my way")
+    assertTrue(board.replyHeld)
+
+    // Cut off by a call: still held, and Hear again is the way forward.
+    speaker.finish(Spoken.INTERRUPTED)
+    assertTrue(board.replyHeld)
+    board.hearAgain()
+    assertTrue(board.replyHeld)
+    speaker.finish()
+
+    assertFalse(board.replyHeld)
+  }
+
+  @Test
+  fun aTapOnAStaleCancelCannotUndoSent() {
+    board.open(maya)
+    board.quick("On my way")
+
+    board.cancelReply()
+
+    assertEquals(Phase.Sent, phase)
+  }
+
+  @Test
   fun leavingTheScreenClosesTheMicrophone() {
     board.open(maya)
     board.reply()

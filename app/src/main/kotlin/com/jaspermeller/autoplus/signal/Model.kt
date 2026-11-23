@@ -54,8 +54,12 @@ interface Signals {
 
   fun next()
 
-  /** Sends [text] through the notification's own reply action. False when the app no longer accepts it. */
-  fun reply(key: String, text: String): Boolean
+  /**
+   * Sends [text] to [talk] through its notification's own reply action. False when it could not
+   * go: the app no longer accepts it, or what the phone holds under that notification is no
+   * longer the conversation being answered.
+   */
+  fun reply(talk: Conversation, text: String): Boolean
 
   /**
    * The driver has heard [talk] read out in full, so the phone can stop showing it as unread.
