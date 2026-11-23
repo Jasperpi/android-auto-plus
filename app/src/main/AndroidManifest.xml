@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- Android Auto only hands a free-drawing surface to an app that holds these two. -->
+  <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
+  <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
+  <!-- Spoken replies. -->
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+  <queries>
+    <!-- To name the app a message or a track came from ("WhatsApp", "Spotify"). -->
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.speech.RecognitionService" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent>
+    <package android:name="com.google.android.projection.gearhead" />
+  </queries>
+
+  <application
+      android:name=".App"
+      android:allowBackup="false"
+      android:enableOnBackInvokedCallback="true"
+      android:icon="@mipmap/ic_launcher"
+      android:label="@string/app_name"
+      android:supportsRtl="true"
+      android:theme="@style/Theme.AutoPlus">
+
+    <meta-data
+        android:name="com.google.android.gms.car.application"
+        android:resource="@xml/automotive_app_desc" />
+    <!-- Level 5 is the first where the host reports taps on the surface. -->
+    <meta-data
+        android:name="androidx.car.app.minCarApiLevel"
+        android:value="5" />
+
+    <activity
+        android:name=".phone.MainActivity"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <service
+        android:name=".signal.PhoneListener"
+        android:exported="true"
+        android:label="@string/app_name"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
+    <service
+        android:name=".car.DriveService"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="androidx.car.app.CarAppService" />
+        <category android:name="androidx.car.app.category.NAVIGATION" />
+      </intent-filter>
+    </service>
+
+  </application>
+
+</manifest>

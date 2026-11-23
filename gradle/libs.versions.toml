@@ -1,0 +1,17 @@
+[versions]
+androidGradlePlugin = "9.5.2"
+carApp = "1.7.0"
+androidxTest = "1.7.0"
+junit = "4.13.2"
+robolectric = "4.18.1"
+
+[libraries]
+car-app = { module = "androidx.car.app:app", version.ref = "carApp" }
+car-app-projected = { module = "androidx.car.app:app-projected", version.ref = "carApp" }
+car-app-testing = { module = "androidx.car.app:app-testing", version.ref = "carApp" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTest" }
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
