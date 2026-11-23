@@ -15,27 +15,34 @@ import kotlin.concurrent.thread
 /**
  * The car's cabin microphone, piped to the speech recognizer. Android Auto records it on the
  * app's behalf, which is also the only microphone a car app may use while it is not on the
- * phone's screen.
+ * phone's screen. The caller holds the cabin's audio focus for as long as this is open.
  */
 class CarMic(private val carContext: CarContext) : MicFeed {
-  @Volatile private var running = false
+  /** One round of recording. Each has its own flag, so closing one can never revive another. */
+  private class Take(val record: CarAudioRecord) {
+    @Volatile var running = true
+  }
 
-  override fun open(): ParcelFileDescriptor? {
+  private var take: Take? = null
+
+  override fun open(refused: () -> Unit): ParcelFileDescriptor? {
     close()
     if (carContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return null
     return try {
       val record = CarAudioRecord.create(carContext)
       val (read, write) = ParcelFileDescriptor.createPipe()
-      running = true
+      val mine = Take(record).also { take = it }
       thread(name = "car-mic") {
+        var delivered = 0L
         try {
           ParcelFileDescriptor.AutoCloseOutputStream(write).use { out ->
             val buffer = ByteArray(CarAudioRecord.AUDIO_CONTENT_BUFFER_SIZE)
             record.startRecording()
-            while (running) {
+            while (mine.running) {
               val count = record.read(buffer, 0, buffer.size)
               if (count < 0) break
               out.write(buffer, 0, count)
+              delivered += count
             }
           }
         } catch (closed: Exception) {
@@ -47,16 +54,28 @@ class CarMic(private val carContext: CarContext) : MicFeed {
             // Nothing left to release.
           }
         }
+        // A host that will not lend its microphone answers with an empty stream, not an error.
+        if (mine.running && delivered == 0L) refused()
       }
       read
     } catch (unavailable: Exception) {
-      // A host too old to lend its mic, or one that refused: the phone's mic is used.
+      // A host too old to lend its mic: the phone's own mic is used.
       null
     }
   }
 
   override fun close() {
-    running = false
+    val ending = take ?: return
+    take = null
+    ending.running = false
+    // Stop here rather than when the reader thread next wakes: it frees the cabin microphone
+    // at once, wakes a reader blocked on the car, and keeps a late stop from landing on the
+    // next take. (The library releases its lock before it blocks, so this cannot deadlock.)
+    try {
+      ending.record.stopRecording()
+    } catch (alreadyStopped: Exception) {
+      // Nothing left to release.
+    }
   }
 }
 

@@ -7,6 +7,7 @@ import com.jaspermeller.autoplus.app
 /**
  * The system binds this once the driver grants notification access. It is the only way an
  * ordinary app can see incoming messages and the playing track, so the whole board hangs off it.
+ * The system delivers every callback here on the main thread.
  */
 class PhoneListener : NotificationListenerService() {
 
@@ -21,7 +22,13 @@ class PhoneListener : NotificationListenerService() {
   }
 
   override fun onListenerDisconnected() {
-    app.phone.listenerDisconnected()
+    app.phone.listenerDisconnected(this)
+  }
+
+  /** The system can tear the service down without the disconnect callback. */
+  override fun onDestroy() {
+    app.phone.listenerDisconnected(this)
+    super.onDestroy()
   }
 
   override fun onNotificationPosted(sbn: StatusBarNotification) = take(sbn)

@@ -9,7 +9,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 
-/** Reads messages through the phone's text-to-speech engine, ducking the music while it talks. */
+/** Reads messages through the phone's text-to-speech engine, ducking the music while it talks. Main thread only. */
 class TtsSpeaker(context: Context) : Speaker {
   private val context = context.applicationContext
   private val main = Handler(Looper.getMainLooper())
@@ -22,16 +22,21 @@ class TtsSpeaker(context: Context) : Speaker {
       .build()
   private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
       .setAudioAttributes(attributes)
+      .setOnAudioFocusChangeListener({ change ->
+        // A call came in mid-sentence. Stop, so the message is neither talked over the call
+        // nor counted as heard.
+        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) stop()
+      }, main)
       .build()
 
   private var engine: TextToSpeech? = null
   private var ready = false
-  private var waiting: Pair<String, (Boolean) -> Unit>? = null
+  private var waiting: Pair<String, (Spoken) -> Unit>? = null
   private var speakingId: String? = null
-  private var speakingDone: ((Boolean) -> Unit)? = null
+  private var speakingDone: ((Spoken) -> Unit)? = null
   private var serial = 0
 
-  override fun say(text: String, done: (finished: Boolean) -> Unit) {
+  override fun say(text: String, done: (Spoken) -> Unit) {
     stop()
     if (engine == null) {
       engine = TextToSpeech(context) { status -> main.post { started(status) } }
@@ -42,21 +47,21 @@ class TtsSpeaker(context: Context) : Speaker {
   override fun stop() {
     waiting?.let { (_, done) ->
       waiting = null
-      done(false)
+      done(Spoken.INTERRUPTED)
     }
     speakingId?.let { id ->
       engine?.stop()
-      finish(id, false)
+      finish(id, Spoken.INTERRUPTED)
     }
   }
 
   private fun started(status: Int) {
     val tts = engine
     if (status != TextToSpeech.SUCCESS || tts == null) {
-      engine = null
+      discardEngine()
       waiting?.let { (_, done) ->
         waiting = null
-        done(false)
+        done(Spoken.FAILED)
       }
       return
     }
@@ -65,16 +70,16 @@ class TtsSpeaker(context: Context) : Speaker {
       override fun onStart(id: String) = Unit
 
       override fun onDone(id: String) {
-        main.post { finish(id, true) }
+        main.post { finish(id, Spoken.FINISHED) }
       }
 
       @Deprecated("Deprecated in the platform; still the callback older engines use")
       override fun onError(id: String) {
-        main.post { finish(id, false) }
+        main.post { failed(id) }
       }
 
       override fun onStop(id: String, interrupted: Boolean) {
-        main.post { finish(id, false) }
+        main.post { finish(id, Spoken.INTERRUPTED) }
       }
     })
     ready = true
@@ -84,20 +89,41 @@ class TtsSpeaker(context: Context) : Speaker {
     }
   }
 
-  private fun speak(text: String, done: (Boolean) -> Unit) {
+  private fun speak(text: String, done: (Spoken) -> Unit) {
+    // Refused means something that outranks a message has the sound, in practice a phone call.
+    // Talking over it would be worse than saying nothing.
+    if (audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+      done(Spoken.FAILED)
+      return
+    }
     val id = "say-${++serial}"
     speakingId = id
     speakingDone = done
-    audio.requestAudioFocus(focus)
-    if (engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) finish(id, false)
+    if (engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) failed(id)
   }
 
-  private fun finish(id: String, finished: Boolean) {
+  /**
+   * The engine could not speak. This object lives as long as the app does, and a speech
+   * service that was updated or killed stays dead, so the next readout starts a fresh one.
+   */
+  private fun failed(id: String) {
+    if (id != speakingId) return
+    finish(id, Spoken.FAILED)
+    discardEngine()
+  }
+
+  private fun discardEngine() {
+    engine?.shutdown()
+    engine = null
+    ready = false
+  }
+
+  private fun finish(id: String, how: Spoken) {
     if (id != speakingId) return
     val done = speakingDone
     speakingId = null
     speakingDone = null
     audio.abandonAudioFocusRequest(focus)
-    done?.invoke(finished)
+    done?.invoke(how)
   }
 }

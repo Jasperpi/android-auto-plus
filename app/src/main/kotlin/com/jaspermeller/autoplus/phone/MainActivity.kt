@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.window.OnBackInvokedDispatcher
 import androidx.core.app.NotificationManagerCompat
 import com.jaspermeller.autoplus.signal.PhoneListener
 
@@ -23,6 +24,10 @@ class MainActivity : Activity() {
     super.onCreate(savedInstanceState)
     view = PhoneView(this, ::steps, ::open)
     setContentView(view)
+    // Back steps out of a conversation before it leaves the app.
+    onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+      if (!view.back()) finish()
+    }
   }
 
   override fun onResume() {

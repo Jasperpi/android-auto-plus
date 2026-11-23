@@ -93,8 +93,9 @@ class BoardPainter(
     canvas.drawColor(colors.ground)
     val safe = if (frame.safe.isEmpty) Rect(0, 0, frame.width, frame.height) else frame.safe
     val area = RectF(safe).apply { inset(MARGIN * dp, MARGIN * dp) }
-    // Smaller than this and no sign would be readable, so the ground is all there is.
-    if (area.width() < 220 * dp || area.height() < 130 * dp) return false
+    // Smaller than this and no sign could be read or pressed, so the ground is all there is:
+    // a blank board is honest, a board of clipped fragments is not.
+    if (area.width() < MIN_WIDTH * dp || area.height() < MIN_HEIGHT * dp) return false
 
     when (val scene = board.scene) {
       Scene.Gantry -> if (board.ready) gantry(canvas, area, board) else setup(canvas, area)
@@ -127,7 +128,8 @@ class BoardPainter(
   private fun gantry(c: Canvas, area: RectF, board: BoardModel) {
     val talks = board.conversations
     val gap = GAP * dp
-    val wide = area.width() >= area.height() * 1.3f
+    // Side by side needs real width; a small card stacks the two instead of squeezing both.
+    val wide = area.width() >= area.height() * 1.3f && area.width() >= 560 * dp
     val playing = RectF()
     val inbox = RectF()
     if (wide) {
@@ -168,9 +170,12 @@ class BoardPainter(
       c.drawRect(strip.left - rule, strip.top, strip.left, strip.bottom, fill)
       controls(c, strip, track, board)
       val words = RectF(body.left + rim + pad, body.top + rim + pad * 0.4f, strip.left - rule - pad * 0.8f, body.bottom - rim - pad * 0.4f)
-      // In a narrow column the artist would crowd the title into fragments.
+      // In a narrow column the artist would crowd the title into fragments, and in a sliver
+      // there is no room for words at all.
       val artist = if (words.width() >= 150 * dp) track.artist else ""
-      kit.titleBlock(c, words, track.title, artist, (words.height() * 0.34f).coerceIn(18 * dp, 40 * dp), colors.white, lines = 2)
+      if (words.width() >= 48 * dp) {
+        kit.titleBlock(c, words, track.title, artist, (words.height() * 0.34f).coerceIn(18 * dp, 40 * dp), colors.white, lines = 2)
+      }
       return
     }
 
@@ -184,7 +189,7 @@ class BoardPainter(
     var left = top.left
     val art = track.art
     val side = min(top.height(), top.width() * 0.42f)
-    if (art != null && side >= 56 * dp) {
+    if (art != null && !art.isRecycled && side >= 56 * dp) {
       val frame = RectF(top.left, top.centerY() - side / 2, top.left + side, top.centerY() + side / 2)
       cover(c, art, frame)
       left = frame.right + pad
@@ -281,7 +286,8 @@ class BoardPainter(
     val rim = kit.rim()
     val rule = EDGE * dp
     val pad = PAD * dp
-    val headH = (area.height() * 0.34f).coerceIn(104 * dp, 176 * dp)
+    // On a very short surface the header gives way, so the choices below never climb over it.
+    val headH = (area.height() * 0.34f).coerceIn(104 * dp, 176 * dp).coerceAtMost(area.height() * 0.46f)
     val head = RectF(area.left, area.top, area.right, area.top + headH)
     kit.sign(c, head, colors.blue, colors.white)
 
@@ -441,7 +447,7 @@ class BoardPainter(
       val side = (box.width() * 0.3f).coerceIn(180 * dp, 320 * dp)
       RectF(box.left, box.top, box.right - side - gap, box.bottom) to RectF(box.right - side, box.top, box.right, box.bottom)
     } else {
-      val bottom = (box.height() * 0.4f).coerceAtLeast(84 * dp)
+      val bottom = (box.height() * 0.4f).coerceAtLeast(84 * dp).coerceAtMost(box.height() * 0.6f)
       RectF(box.left, box.top, box.right, box.bottom - bottom - gap) to RectF(box.left, box.bottom - bottom, box.right, box.bottom)
     }
   }
@@ -553,6 +559,10 @@ class BoardPainter(
 
   companion object {
     const val PIXEL_GAP = 0.5f
+
+    /** The smallest area, in dp inside the margins, the board will draw on. */
+    const val MIN_WIDTH = 300f
+    const val MIN_HEIGHT = 170f
 
     /** The least height, in dp, at which the music sign can carry its controls under its legend. */
     const val STACKED = 190f

@@ -1,8 +1,20 @@
 package com.jaspermeller.autoplus.voice
 
-/** Reads text aloud. [say] reports whether the whole thing was spoken (false when cut off). */
+/** How a readout ended. */
+enum class Spoken {
+  /** Every word was spoken. */
+  FINISHED,
+
+  /** Cut off: by the driver moving on, or by another readout starting. */
+  INTERRUPTED,
+
+  /** Nothing could be spoken: no speech engine, or the phone would not give up the sound (a call). */
+  FAILED,
+}
+
+/** Reads text aloud. [say] reports how the readout ended, exactly once. */
 interface Speaker {
-  fun say(text: String, done: (finished: Boolean) -> Unit)
+  fun say(text: String, done: (Spoken) -> Unit)
 
   fun stop()
 }

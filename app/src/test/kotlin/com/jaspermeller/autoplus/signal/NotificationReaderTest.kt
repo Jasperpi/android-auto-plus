@@ -90,16 +90,50 @@ class NotificationReaderTest {
   }
 
   @Test
-  fun theDriversOwnMessagesAreNotUnread() {
+  fun aThreadTheDriverHasAnsweredIsNotUnread() {
+    // What a messaging app posts right after a reply: the old message, then the driver's own.
+    val self: Person? = null
+    val answered = NotificationCompat.MessagingStyle(me)
+        .addMessage("hello", 100L, maya)
+        .addMessage("On my way", 200L, self)
+
+    assertNull(read(builder().setStyle(answered).build()))
+  }
+
+  @Test
+  fun onlyWhatArrivedAfterTheDriversLastMessageIsUnread() {
     val self: Person? = null
     val style = NotificationCompat.MessagingStyle(me)
         .addMessage("hello", 100L, maya)
         .addMessage("On my way", 200L, self)
+        .addMessage("ok see you", 300L, maya)
+        .addMessage("bring the binder", 400L, maya)
     val talk = read(builder().setStyle(style).build())!!.conversation
-    assertEquals(listOf("hello"), talk.messages.map { it.text })
 
-    val onlyMine = NotificationCompat.MessagingStyle(me).addMessage("On my way", 200L, self)
-    assertNull(read(builder().setStyle(onlyMine).build()))
+    assertEquals(listOf("ok see you", "bring the binder"), talk.messages.map { it.text })
+  }
+
+  @Test
+  fun anAppThatNamesTheDriverAsSenderIsStillTheDriver() {
+    // Some apps pass the style's own user as the sender instead of leaving it empty.
+    val style = NotificationCompat.MessagingStyle(me)
+        .addMessage("hello", 100L, maya)
+        .addMessage("On my way", 200L, me)
+
+    assertNull("the driver's own reply must never be read back as new", read(builder().setStyle(style).build()))
+  }
+
+  @Test
+  fun aReplyThatOpensAScreenIsNotOffered() {
+    val opensScreen = PendingIntent.getActivity(
+        context, 0, Intent("reply").setPackage(context.packageName), PendingIntent.FLAG_MUTABLE)
+    val action = NotificationCompat.Action.Builder(0, "Reply", opensScreen)
+        .addRemoteInput(RemoteInput.Builder("text").build())
+        .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+        .build()
+    val style = NotificationCompat.MessagingStyle(me).addMessage("hello", 100L, maya)
+
+    assertFalse(read(builder().setStyle(style).addAction(action).build())!!.conversation.canReply)
   }
 
   @Test

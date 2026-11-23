@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  # So a run can be started by hand, for example after the account's Actions limit is sorted out.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

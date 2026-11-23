@@ -19,13 +19,13 @@ import com.jaspermeller.autoplus.board.BoardPainter
 import com.jaspermeller.autoplus.board.Frame
 import com.jaspermeller.autoplus.board.Lettering
 import com.jaspermeller.autoplus.board.Palette
+import com.jaspermeller.autoplus.board.Scene
 import com.jaspermeller.autoplus.board.SignKit
 import com.jaspermeller.autoplus.car.HandlerTimer
 import com.jaspermeller.autoplus.car.motionAllowed
 import com.jaspermeller.autoplus.car.timeFormat
 import com.jaspermeller.autoplus.voice.RecognizerDictation
 import kotlin.math.abs
-import kotlin.math.min
 
 /**
  * The phone screen, drawn with the same signs as the car: the live board on top (it works, so
@@ -56,6 +56,7 @@ class PhoneView(
   private val stepBoxes = ArrayList<Pair<RectF, Step.Kind>>()
   private val bars = Rect()
   private var steps: List<Step> = emptyList()
+  private var motion = true
   private var downX = 0f
   private var downY = 0f
 
@@ -80,7 +81,17 @@ class PhoneView(
 
   fun start() {
     context.app.phone.watch(phoneChanged)
+    motion = motionAllowed(context)
+    // The inbox may have changed while the screen was off.
+    board.signalsChanged()
     refresh()
+  }
+
+  /** Steps out of a conversation. False when the board is already home. */
+  fun back(): Boolean {
+    if (board.scene !is Scene.Thread) return false
+    board.back()
+    return true
   }
 
   fun stop() {
@@ -104,7 +115,7 @@ class PhoneView(
     boardArea.set(left, top, right, boardBottom)
     val moving = painter.paint(
         canvas,
-        Frame(width, height, boardArea, dp, night, SystemClock.uptimeMillis(), motionAllowed(context)),
+        Frame(width, height, boardArea, dp, night, SystemClock.uptimeMillis(), motion),
         board,
     )
     if (moving) postInvalidateDelayed(FRAME_MS)

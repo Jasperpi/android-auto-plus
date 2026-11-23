@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -34,8 +35,9 @@ class PhoneTest {
       context, 0, Intent(action).setPackage(context.packageName),
       if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE)
 
-  /** A stand-in messaging app: a notification whose actions come back to this test. */
-  private fun post(key: String, withReply: Boolean = true) {
+  /** A stand-in messaging app: its reply and mark-read actions come back to this test. */
+  @Before
+  fun standInMessagingApp() {
     context.registerReceiver(object : BroadcastReceiver() {
       override fun onReceive(c: Context, intent: Intent) {
         replies += RemoteInput.getResultsFromIntent(intent)?.getCharSequence("text")?.toString()
@@ -46,7 +48,9 @@ class PhoneTest {
         reads++
       }
     }, IntentFilter("test.READ"), Context.RECEIVER_NOT_EXPORTED)
+  }
 
+  private fun post(key: String, withReply: Boolean = true) {
     val style = NotificationCompat.MessagingStyle(Person.Builder().setName("Me").build())
         .addMessage("are you coming", 100L, Person.Builder().setName("Maya").build())
     val builder = NotificationCompat.Builder(context, "messages")
@@ -79,8 +83,8 @@ class PhoneTest {
   fun hearingAConversationMarksItReadOnce() {
     post("a")
 
-    phone.heard("a")
-    phone.heard("a")
+    phone.heard("a", upTo = 100L)
+    phone.heard("a", upTo = 100L)
     deliver()
 
     assertEquals(1, reads)
@@ -88,9 +92,21 @@ class PhoneTest {
   }
 
   @Test
+  fun aMessageThatArrivedDuringTheReadoutKeepsTheThreadUnread() {
+    post("a")
+
+    // The car read the thread as it stood at time 50; the message at 100 came in meanwhile.
+    phone.heard("a", upTo = 50L)
+    deliver()
+
+    assertEquals(0, reads)
+    assertEquals(listOf("Maya"), phone.conversations().map { it.title })
+  }
+
+  @Test
   fun aReplyStillWorksAfterTheConversationWasHeard() {
     post("a")
-    phone.heard("a")
+    phone.heard("a", upTo = 100L)
 
     assertTrue(phone.reply("a", "Yes"))
     deliver()
@@ -159,6 +175,14 @@ class PhoneTest {
     assertTrue(track.playing)
     assertTrue(track.canNext)
     assertFalse(track.canPrevious)
+  }
+
+  @Test
+  fun bufferingStillShowsPause() {
+    val metadata = MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, "Pink + White").build()
+    val state = PlaybackState.Builder().setState(PlaybackState.STATE_BUFFERING, 0L, 1f).build()
+
+    assertTrue(MediaWatcher.nowPlayingOf(metadata, state, "Spotify")!!.playing)
   }
 
   @Test

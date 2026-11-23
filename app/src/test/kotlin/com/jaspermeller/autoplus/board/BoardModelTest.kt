@@ -6,6 +6,7 @@ import com.jaspermeller.autoplus.FakeSpeaker
 import com.jaspermeller.autoplus.FakeTimer
 import com.jaspermeller.autoplus.talk
 import com.jaspermeller.autoplus.voice.Heard
+import com.jaspermeller.autoplus.voice.Spoken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,6 +41,97 @@ class BoardModelTest {
 
     assertEquals(Phase.Ready, phase)
     assertEquals(listOf("a"), signals.heardKeys)
+    assertEquals("heard only as far as the snapshot that was read", listOf(maya.latestAt), signals.heardUpTo)
+  }
+
+  @Test
+  fun aReadoutThatCannotBeSpokenSaysSoAndLeavesTheMessageUnread() {
+    board.open(maya)
+    speaker.finish(Spoken.FAILED)
+
+    assertEquals(Phase.Trouble("Could not read this aloud", canRetry = false), phase)
+    assertTrue(signals.heardKeys.isEmpty())
+  }
+
+  @Test
+  fun aReadoutCutOffByTheOtherBoardIsNotMarkedHeard() {
+    board.open(maya)
+    speaker.finish(Spoken.INTERRUPTED)
+
+    assertEquals(Phase.Ready, phase)
+    assertTrue(signals.heardKeys.isEmpty())
+  }
+
+  @Test
+  fun aBoardOnlyEverStopsItsOwnSpeech() {
+    val phoneBoard = BoardModel(signals, speaker, FakeDictation(), FakeTimer())
+    board.open(maya)
+    val stopsBefore = speaker.stops
+
+    // The phone's screen times out while the car is still reading.
+    phoneBoard.close()
+
+    assertEquals(stopsBefore, speaker.stops)
+    speaker.finish()
+    assertEquals(listOf("a"), signals.heardKeys)
+  }
+
+  @Test
+  fun aDoubleTapOnAReadyMadeReplySendsItOnce() {
+    board.open(maya)
+    board.quick("On my way")
+    // The second tap lands on signs the painter has not yet redrawn.
+    board.quick("On my way")
+    board.quick("Yes")
+
+    assertEquals(listOf("a" to "On my way"), signals.sent)
+  }
+
+  @Test
+  fun aSecondTapOnReplyDoesNotRestartListening() {
+    board.open(maya)
+    board.reply()
+    dictation.hearing("yes save")
+    board.reply()
+
+    assertEquals("the words so far are kept", Phase.Listening("yes save", 0.6f), phase)
+    assertEquals(1, dictation.starts)
+  }
+
+  @Test
+  fun leavingTheScreenDropsAReplyThatHasNotSent() {
+    board.open(maya)
+    board.reply()
+    dictation.hear(Heard.Words("On my way"))
+    timer.advance(2000)
+
+    board.pause()
+
+    assertEquals(Phase.Ready, phase)
+    timer.advance(10_000)
+    assertTrue("nothing sends while the driver cannot see the board", signals.sent.isEmpty())
+  }
+
+  @Test
+  fun leavingTheScreenClosesTheMicrophone() {
+    board.open(maya)
+    board.reply()
+
+    board.pause()
+
+    assertFalse(dictation.listening)
+    assertEquals(Phase.Ready, phase)
+  }
+
+  @Test
+  fun leavingTheScreenLetsAReadoutFinish() {
+    board.open(maya)
+    val stopsBefore = speaker.stops
+
+    board.pause()
+
+    assertEquals(Phase.Reading, phase)
+    assertEquals(stopsBefore, speaker.stops)
   }
 
   @Test

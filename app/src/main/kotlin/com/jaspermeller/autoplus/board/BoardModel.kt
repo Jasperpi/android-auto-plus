@@ -6,6 +6,7 @@ import com.jaspermeller.autoplus.signal.Signals
 import com.jaspermeller.autoplus.voice.Dictation
 import com.jaspermeller.autoplus.voice.Heard
 import com.jaspermeller.autoplus.voice.Speaker
+import com.jaspermeller.autoplus.voice.Spoken
 import com.jaspermeller.autoplus.voice.Timer
 
 /** Which signs are up. */
@@ -65,6 +66,12 @@ class BoardModel(
   private var turn = 0
   private var cancelTimer: () -> Unit = {}
 
+  /**
+   * True while a readout this board started is still going. The speaker is shared with the
+   * other board (car and phone), and a board must only ever cut off its own speech.
+   */
+  private var speaking = false
+
   /** The phone's messages or music changed. */
   fun signalsChanged() {
     if (firstShown >= conversations.size) firstShown = 0
@@ -75,10 +82,19 @@ class BoardModel(
     val mine = leave()
     scene = Scene.Thread(talk, Phase.Reading)
     onChange()
-    speaker.say(Readout.of(talk)) { finished ->
+    speaking = true
+    speaker.say(Readout.of(talk)) { how ->
+      speaking = false
       if (mine != turn) return@say
-      if (finished) signals.heard(talk.key)
-      phase(Phase.Ready)
+      when (how) {
+        Spoken.FINISHED -> {
+          // Only what was in the snapshot has been heard; anything newer stays unread.
+          signals.heard(talk.key, talk.latestAt)
+          phase(Phase.Ready)
+        }
+        Spoken.INTERRUPTED -> phase(Phase.Ready)
+        Spoken.FAILED -> phase(Phase.Trouble("Could not read this aloud", canRetry = false))
+      }
     }
   }
 
@@ -100,6 +116,8 @@ class BoardModel(
   fun reply() {
     val thread = scene as? Scene.Thread ?: return
     if (!thread.talk.canReply) return
+    // A second tap landing on the old signs must not restart listening or resend.
+    if (thread.phase is Phase.Listening || thread.phase == Phase.Sent) return
     val mine = leave()
     phase(Phase.Listening())
     dictation.listen(
@@ -120,6 +138,9 @@ class BoardModel(
   fun quick(text: String) {
     val thread = scene as? Scene.Thread ?: return
     if (!thread.talk.canReply) return
+    // Ready-made lines are only on the board while reading or just after; a tap that arrives
+    // later is a double tap on signs that have already gone, and must not send again.
+    if (thread.phase != Phase.Reading && thread.phase != Phase.Ready) return
     leave()
     send(thread.talk, text)
   }
@@ -150,10 +171,21 @@ class BoardModel(
 
   fun next() = signals.next()
 
-  /** The surface is going away (car unplugged, activity stopped): go quiet. */
+  /**
+   * The board is no longer in front of the driver (another app took the car screen). A reply
+   * must never send unseen and the microphone must not stay open, so a reply in progress is
+   * dropped. A readout carries on: it needs no screen.
+   */
+  fun pause() {
+    val phase = (scene as? Scene.Thread)?.phase ?: return
+    if (phase is Phase.Listening || phase is Phase.Confirm) cancelReply()
+  }
+
+  /** The surface is gone for good (car unplugged, phone screen closed): go quiet. */
   fun close() {
     leave()
     scene = Scene.Gantry
+    firstShown = 0
   }
 
   private fun confirm(words: String) {
@@ -191,7 +223,10 @@ class BoardModel(
     turn++
     cancelTimer()
     cancelTimer = {}
-    speaker.stop()
+    if (speaking) {
+      speaking = false
+      speaker.stop()
+    }
     dictation.cancel()
     return turn
   }

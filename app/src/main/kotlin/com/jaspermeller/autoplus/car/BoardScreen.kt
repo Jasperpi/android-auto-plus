@@ -1,5 +1,6 @@
 package com.jaspermeller.autoplus.car
 
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +13,7 @@ import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
+import androidx.car.app.model.CarColor
 import androidx.car.app.model.CarIcon
 import androidx.car.app.model.Template
 import androidx.car.app.navigation.model.NavigationTemplate
@@ -60,6 +62,7 @@ class BoardScreen(
   private val visible = Rect()
   private val stable = Rect()
   private var framePending = false
+  private var motion = true
 
   init {
     board.onChange = ::redraw
@@ -71,21 +74,38 @@ class BoardScreen(
     phone.watch(phoneChanged)
   }
 
+  override fun onStart(owner: LifecycleOwner) {
+    // Read once per appearance, not once per frame.
+    motion = motionAllowed(carContext)
+    redraw()
+  }
+
+  /** Another app took the car screen. */
+  override fun onStop(owner: LifecycleOwner) {
+    board.pause()
+  }
+
   override fun onDestroy(owner: LifecycleOwner) {
     phone.unwatch(phoneChanged)
     board.close()
     handler.removeCallbacks(drawFrame)
     surface = null
+    carContext.getCarService(AppManager::class.java).setSurfaceCallback(null)
   }
 
   override fun onGetTemplate(): Template {
     // The template insists on one host-drawn button. Make it the most useful one: read the newest message.
     val read = Action.Builder()
-        .setIcon(CarIcon.Builder(IconCompat.createWithResource(carContext, R.drawable.ic_read)).build())
+        // Tinted by the host, so the mark stays visible on its day and night button colours.
+        .setIcon(CarIcon.Builder(IconCompat.createWithResource(carContext, R.drawable.ic_read)).setTint(CarColor.DEFAULT).build())
         .setOnClickListener { board.readNewest() }
         .build()
     return NavigationTemplate.Builder()
         .setActionStrip(ActionStrip.Builder().addAction(read).build())
+        // The library says a host withholds surface gestures from an app that leaves the pan
+        // action off its map strip. It does not say whether a plain tap counts, and every sign
+        // here depends on taps, so the action is declared.
+        .setMapActionStrip(ActionStrip.Builder().addAction(Action.PAN).build())
         .build()
   }
 
@@ -98,6 +118,12 @@ class BoardScreen(
   // ---- SurfaceCallback: the host calls these on the main thread.
 
   override fun onSurfaceAvailable(container: SurfaceContainer) {
+    if (container.width != width || container.height != height) {
+      // The old safe areas belong to the old size (full screen against a split-screen tile);
+      // until the host sends new ones, the whole new surface is the best guess.
+      visible.setEmpty()
+      stable.setEmpty()
+    }
     surface = container.surface
     width = container.width
     height = container.height
@@ -117,6 +143,10 @@ class BoardScreen(
 
   override fun onSurfaceDestroyed(container: SurfaceContainer) {
     surface = null
+    handler.removeCallbacks(drawFrame)
+    framePending = false
+    // With nothing to show it on, a reply cannot be checked before it sends.
+    board.pause()
   }
 
   override fun onClick(x: Float, y: Float) {
@@ -126,29 +156,43 @@ class BoardScreen(
   private fun draw() {
     framePending = false
     val target = surface?.takeIf { it.isValid } ?: return
+    if (width <= 0 || height <= 0) return
     // The stable area never changes as host buttons come and go, so signs do not jump around.
     val safe = when {
       !stable.isEmpty -> stable
       !visible.isEmpty -> visible
       else -> Rect(0, 0, width, height)
     }
-    val frame = Frame(width, height, safe, dpi / 160f, carContext.isDarkMode, SystemClock.uptimeMillis(), motionAllowed(carContext))
-    val canvas = try {
-      target.lockHardwareCanvas()
-    } catch (gone: RuntimeException) {
-      // The car was unplugged between the check and the lock.
-      return
-    }
+    val frame = Frame(width, height, safe, dpi / 160f, carContext.isDarkMode, SystemClock.uptimeMillis(), motion)
+    val canvas = lock(target) ?: return
     val moving = try {
       painter.paint(canvas, frame, board)
     } finally {
-      target.unlockCanvasAndPost(canvas)
+      try {
+        target.unlockCanvasAndPost(canvas)
+      } catch (gone: RuntimeException) {
+        // Unplugged mid-frame: the surface was released while it was being painted.
+        surface = null
+      }
     }
-    if (moving) {
+    if (moving && surface != null) {
       framePending = true
       handler.postDelayed(drawFrame, FRAME_MS)
     }
   }
+
+  /** A hardware canvas where the surface allows one, a software canvas where it does not. */
+  private fun lock(target: Surface): Canvas? =
+      try {
+        target.lockHardwareCanvas()
+      } catch (refused: RuntimeException) {
+        try {
+          target.lockCanvas(null)
+        } catch (gone: RuntimeException) {
+          // The car was unplugged between the check and the lock.
+          null
+        }
+      }
 
   private companion object {
     /** Fifteen frames a second carries the pixel chase and costs the video link very little. */

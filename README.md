@@ -18,8 +18,9 @@ use. What it replaces is the part you look at and touch.
 - **Messages.** Each conversation with unread messages is a blue sign. Tap it and the car
   reads the messages aloud; nothing is put on the screen to read. A conversation you have
   heard is marked read on the phone and leaves the board.
-- **Replies.** `Reply` listens through the car's microphone, shows your words, and sends them
-  after four seconds unless you stop it. Four ready-made replies send at once.
+- **Replies.** `Reply` quiets the music, listens through the car's microphone, shows your
+  words, and sends them after four seconds unless you stop it. Four ready-made replies send at
+  once. Switching to another app on the car screen drops a reply that has not sent.
 - **Music.** The brown sign shows the track from Spotify (or whatever is playing) with
   previous, play or pause, and next. Sound still goes through Android Auto as it does now.
 - **Day and night.** The board follows the car's own day and night switch.
@@ -92,6 +93,11 @@ Not yet tested: anything that needs the real Android Auto app, which means the D
 Unit, the Ioniq itself, reading aloud through the car's speakers, and speaking a reply through
 the car's microphone. The emulator image has no speech engine, so those two were exercised
 only with stand-ins.
+
+The first thing to check on a head unit is that a tap on a sign registers. Android Auto
+decides whether to pass touches on the drawing surface to an app, and the whole board depends
+on it. If taps do not arrive, only the button Android Auto draws itself (read the newest
+message) will work.
 
 ## Type and colour
 

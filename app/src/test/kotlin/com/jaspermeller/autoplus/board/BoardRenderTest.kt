@@ -38,7 +38,15 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35])
 class BoardRenderTest {
 
-  private class Surface(val name: String, val width: Int, val height: Int, val dpi: Int, val safe: Rect? = null)
+  private class Surface(
+      val name: String,
+      val width: Int,
+      val height: Int,
+      val dpi: Int,
+      val safe: Rect? = null,
+      /** Too small for full-size targets; the layout must still hold together. */
+      val cramped: Boolean = false,
+  )
 
   private val surfaces = listOf(
       // The Ioniq 6's wide panel, with the host's rail taking the left edge.
@@ -48,6 +56,12 @@ class BoardRenderTest {
       // The map half of Android Auto's split dashboard.
       Surface("split", 1080, 620, 160),
       Surface("phone", 1080, 1500, 420),
+      // A sliver, like a nav card squeezed beside another app.
+      Surface("sliver", 900, 260, 160, cramped = true),
+      // A small card, a little above the size at which the painter gives up.
+      Surface("card", 420, 280, 160, cramped = true),
+      // Below it: the board must leave the ground bare rather than draw fragments.
+      Surface("tiny", 250, 160, 160, cramped = true),
   )
 
   private val signals = FakeSignals()
@@ -172,16 +186,20 @@ class BoardRenderTest {
       val bitmap = Bitmap.createBitmap(surface.width, surface.height, Bitmap.Config.ARGB_8888)
       painter.paint(Canvas(bitmap), Frame(surface.width, surface.height, safe, dp, night, now = 480), board)
       File(dir, "$name-${surface.name}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-      assertTargetsAreReachable("$name on ${surface.name}", painter.targetBoxes, safe, dp)
+      assertTargetsAreReachable("$name on ${surface.name}", painter.targetBoxes, safe, dp, surface.cramped)
+      if (surface.name == "tiny") assertTrue("$name: nothing is pressable on a surface too small to read", painter.targetBoxes.isEmpty())
     }
   }
 
-  private fun assertTargetsAreReachable(where: String, boxes: List<RectF>, safe: Rect, dp: Float) {
+  private fun assertTargetsAreReachable(where: String, boxes: List<RectF>, safe: Rect, dp: Float, cramped: Boolean) {
     val bounds = RectF(safe)
     for (box in boxes) {
       assertTrue("$where: target $box leaves the safe area $safe", bounds.contains(box))
+      assertTrue("$where: target $box is inside out", box.width() > 0 && box.height() > 0)
       // Android's driving guidance asks for 76dp; a finger at arm's length needs every bit of it.
-      assertTrue("$where: target $box is under 76dp", box.width() >= 76 * dp - 0.5f && box.height() >= 76 * dp - 0.5f)
+      if (!cramped) {
+        assertTrue("$where: target $box is under 76dp", box.width() >= 76 * dp - 0.5f && box.height() >= 76 * dp - 0.5f)
+      }
     }
     for (i in boxes.indices) for (j in i + 1 until boxes.size) {
       assertFalse("$where: targets ${boxes[i]} and ${boxes[j]} overlap", RectF.intersects(boxes[i], boxes[j]))

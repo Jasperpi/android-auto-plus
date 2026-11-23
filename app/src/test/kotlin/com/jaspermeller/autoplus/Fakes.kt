@@ -7,6 +7,7 @@ import com.jaspermeller.autoplus.signal.Signals
 import com.jaspermeller.autoplus.voice.Dictation
 import com.jaspermeller.autoplus.voice.Heard
 import com.jaspermeller.autoplus.voice.Speaker
+import com.jaspermeller.autoplus.voice.Spoken
 import com.jaspermeller.autoplus.voice.Timer
 
 class FakeSignals : Signals {
@@ -41,8 +42,11 @@ class FakeSignals : Signals {
     return true
   }
 
-  override fun heard(key: String) {
+  val heardUpTo = ArrayList<Long>()
+
+  override fun heard(key: String, upTo: Long) {
     heardKeys += key
+    heardUpTo += upTo
     talks = talks.filter { it.key != key }
   }
 }
@@ -50,29 +54,31 @@ class FakeSignals : Signals {
 class FakeSpeaker : Speaker {
   val said = ArrayList<String>()
   var stops = 0
-  private var done: ((Boolean) -> Unit)? = null
+  private var done: ((Spoken) -> Unit)? = null
 
-  override fun say(text: String, done: (finished: Boolean) -> Unit) {
+  /** Mirrors the real speaker: a new readout cuts off the one before it. */
+  override fun say(text: String, done: (Spoken) -> Unit) {
+    finish(Spoken.INTERRUPTED)
     said += text
     this.done = done
   }
 
-  /** Mirrors the real speaker: cutting speech off reports an unfinished readout. */
   override fun stop() {
     stops++
-    finish(false)
+    finish(Spoken.INTERRUPTED)
   }
 
-  fun finish(finished: Boolean = true) {
+  fun finish(how: Spoken = Spoken.FINISHED) {
     val report = done
     done = null
-    report?.invoke(finished)
+    report?.invoke(how)
   }
 }
 
 class FakeDictation : Dictation {
   var listening = false
   var cancels = 0
+  var starts = 0
   private var partial: ((String) -> Unit)? = null
   private var level: ((Float) -> Unit)? = null
   private var done: ((Heard) -> Unit)? = null
@@ -82,6 +88,7 @@ class FakeDictation : Dictation {
     this.level = level
     this.done = done
     listening = true
+    starts++
   }
 
   override fun cancel() {

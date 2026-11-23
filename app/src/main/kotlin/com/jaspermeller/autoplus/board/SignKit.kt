@@ -28,6 +28,7 @@ class SignKit(val lettering: Lettering) {
 
   /** A sign blank: rounded corners and the inset border every US road sign carries. */
   fun sign(c: Canvas, box: RectF, ground: Int, edge: Int) {
+    if (box.width() <= 0f || box.height() <= 0f) return
     val radius = corner(box)
     fill.color = ground
     c.drawRoundRect(box, radius, radius, fill)
@@ -37,6 +38,7 @@ class SignKit(val lettering: Lettering) {
     stroke.strokeWidth = width
     scratch.set(box)
     scratch.inset(gap + width / 2, gap + width / 2)
+    if (scratch.width() <= 0f || scratch.height() <= 0f) return
     val inner = max(0f, radius - gap - width / 2)
     c.drawRoundRect(scratch, inner, inner, stroke)
   }
@@ -64,7 +66,8 @@ class SignKit(val lettering: Lettering) {
       val under = if (second.isEmpty()) null else {
         layout(second, box.width(), trial * 0.62f, lettering.plain, ink, secondLines, Layout.Alignment.ALIGN_NORMAL)
       }
-      val whole = !clipped(legend) && (under == null || !clipped(under)) && legend.height + (under?.height ?: 0) <= box.height()
+      val whole = !clipped(legend) && !splitsWord(legend) && (under == null || !clipped(under)) &&
+          legend.height + (under?.height ?: 0) <= box.height()
       if (whole) {
         block(c, box, listOfNotNull(legend, under))
         return
@@ -85,6 +88,16 @@ class SignKit(val lettering: Lettering) {
 
   private fun clipped(layout: StaticLayout): Boolean = layout.getEllipsisCount(layout.lineCount - 1) > 0
 
+  /** True when a line ends in the middle of a word ("May" / "a"), which reads as two words. */
+  private fun splitsWord(layout: StaticLayout): Boolean {
+    val words = layout.text
+    for (line in 0 until layout.lineCount - 1) {
+      val end = layout.getLineEnd(line)
+      if (end in 1 until words.length && !words[end - 1].isWhitespace() && !words[end].isWhitespace()) return true
+    }
+    return false
+  }
+
   /** One line in the lighter face, centred vertically. */
   fun plain(c: Canvas, box: RectF, words: String, size: Float, ink: Int) {
     block(c, box, listOf(fit(words, box.width(), size, size * SHRINK, lettering.plain, ink, 1)))
@@ -103,7 +116,7 @@ class SignKit(val lettering: Lettering) {
     block(c, box, listOf(fit(words, box.width(), size, size * SHRINK, lettering.legend, ink, lines, tallest = box.height())))
   }
 
-  fun corner(box: RectF): Float = min(16 * dp, min(box.width(), box.height()) * 0.18f)
+  fun corner(box: RectF): Float = max(0f, min(16 * dp, min(box.width(), box.height()) * 0.18f))
 
   /** How far in from a sign's edge its border ends. */
   fun rim(): Float = (EDGE_GAP + EDGE) * dp
@@ -129,7 +142,7 @@ class SignKit(val lettering: Lettering) {
     var trial = size
     while (true) {
       val layout = layout(words, width, trial, face, ink, lines, align)
-      val whole = !clipped(layout) && layout.height <= tallest
+      val whole = !clipped(layout) && !splitsWord(layout) && layout.height <= tallest
       if (whole || trial <= smallest) return layout
       trial = max(smallest, trial * 0.93f)
     }
@@ -155,13 +168,17 @@ class SignKit(val lettering: Lettering) {
    * line's capitals to the last baseline, not the font's taller line box.
    */
   private fun block(c: Canvas, box: RectF, pieces: List<StaticLayout>) {
-    if (pieces.isEmpty()) return
+    if (pieces.isEmpty() || box.width() <= 0f || box.height() <= 0f) return
     val first = pieces.first()
     val last = pieces.last()
     val above = -first.getLineAscent(0) - lettering.capRatio * first.paint.textSize
     val below = last.getLineDescent(last.lineCount - 1).toFloat()
     val total = pieces.sumOf { it.height }.toFloat()
     var y = box.centerY() - (total - above - below) / 2 - above
+    // On a surface too small for its words, lettering is cut at its own box rather than
+    // running across a border or onto the next sign.
+    c.save()
+    c.clipRect(box.left - 2 * dp, box.top - 4 * dp, box.right + 2 * dp, box.bottom + 4 * dp)
     for (piece in pieces) {
       c.save()
       c.translate(box.left, y)
@@ -169,6 +186,7 @@ class SignKit(val lettering: Lettering) {
       c.restore()
       y += piece.height
     }
+    c.restore()
   }
 
   companion object {

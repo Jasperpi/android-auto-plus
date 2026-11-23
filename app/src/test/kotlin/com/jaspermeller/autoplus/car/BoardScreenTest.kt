@@ -7,6 +7,7 @@ import android.media.ImageReader
 import android.os.Looper
 import androidx.car.app.OnDoneCallback
 import androidx.car.app.SurfaceContainer
+import androidx.car.app.model.Action
 import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.car.app.testing.ScreenController
 import androidx.car.app.testing.TestAppManager
@@ -65,12 +66,20 @@ class BoardScreenTest {
   }
 
   @Test
-  fun theTemplateIsOneTheHostAccepts() {
+  fun theTemplatePassesTheLibrarysOwnChecks() {
     controller.moveToState(Lifecycle.State.RESUMED)
 
-    // Building it runs the library's own checks, so reaching here means the host would take it.
+    // Building it runs the library's own checks on the template. Whether a real host then
+    // shows it is only known on a head unit.
     val template = screen.onGetTemplate() as NavigationTemplate
     assertEquals(1, template.actionStrip!!.actions.size)
+  }
+
+  @Test
+  fun theMapStripDeclaresThePanActionThatTurnsOnTouch() {
+    val template = screen.onGetTemplate() as NavigationTemplate
+
+    assertEquals(listOf(Action.TYPE_PAN), template.mapActionStrip!!.actions.map { it.type })
   }
 
   @Test
@@ -117,6 +126,25 @@ class BoardScreenTest {
     idle()
 
     assertTrue(speaker.said.isEmpty())
+  }
+
+  @Test
+  fun switchingToAnotherAppDropsAReplyInProgress() {
+    controller.moveToState(Lifecycle.State.RESUMED)
+    val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!
+    callback.onSurfaceAvailable(surface(1280, 720))
+    idle()
+    callback.onClick(1000f, 150f)
+    idle()
+    speaker.finish()
+    callback.onClick(300f, 330f)
+    idle()
+    assertTrue(dictation.listening)
+
+    // The driver opens Maps: the screen stops but the session lives on.
+    controller.moveToState(Lifecycle.State.CREATED)
+
+    assertEquals(false, dictation.listening)
   }
 
   @Test
