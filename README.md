@@ -86,9 +86,11 @@ The tests paint every scene of the board, at the Ioniq's size and four others, i
 ## What has been tested, and what has not
 
 Tested on this computer: the unit tests (the board's behaviour, notification parsing, the
-reply path, the car screen through the Car App Library's test host), and the debug build
-running on an Android 14 emulator, where a reply from the board reached the stand-in
-messaging app and the media buttons reached the stand-in player.
+reply path, the speaker, the car screen through the Car App Library's test host, the stand-in
+messaging app end to end), on Windows and in a Linux container. An early build also ran on an
+Android 14 emulator, where a reply from the board reached the stand-in messaging app and the
+media buttons reached the stand-in player; everything added after the code review has run in
+unit tests only.
 
 Not yet tested: anything that needs the real Android Auto app, which means the Desktop Head
 Unit, the Ioniq itself, reading aloud through the car's speakers, and speaking a reply through
