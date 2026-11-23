@@ -171,6 +171,28 @@ class BoardScreenTest {
   }
 
   @Test
+  fun shrinkingTheBoardToACardTooSmallToShowDropsAReplyInProgress() {
+    controller.moveToState(Lifecycle.State.RESUMED)
+    val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!
+    callback.onSurfaceAvailable(surface(1280, 720))
+    idle()
+    callback.onClick(1000f, 150f)
+    idle()
+    speaker.finish()
+    settle()
+    callback.onClick(300f, 330f)
+    idle()
+    assertTrue(dictation.listening)
+
+    // Android Auto moves the app into a small dashboard card: same screen, smaller surface.
+    callback.onSurfaceAvailable(surface(300, 200))
+    // The next frame is already scheduled a few milliseconds out, for the listening pixels.
+    settle()
+
+    assertEquals("the microphone closes when the reply can no longer be seen", false, dictation.listening)
+  }
+
+  @Test
   fun unpluggingMidReplyStopsListening() {
     controller.moveToState(Lifecycle.State.RESUMED)
     val callback = carContext.getCarService(TestAppManager::class.java).surfaceCallback!!

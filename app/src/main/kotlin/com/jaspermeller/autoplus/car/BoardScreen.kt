@@ -175,6 +175,9 @@ class BoardScreen(
         surface = null
       }
     }
+    // The host squeezed the board into a card too small to show it (it resizes the surface
+    // rather than stopping the screen). A reply in progress can no longer be seen or cancelled.
+    if (!painter.showing) board.pause()
     if (moving && surface != null) {
       framePending = true
       handler.postDelayed(drawFrame, FRAME_MS)

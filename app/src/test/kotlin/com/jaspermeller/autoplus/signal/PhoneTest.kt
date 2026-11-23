@@ -107,6 +107,17 @@ class PhoneTest {
   }
 
   @Test
+  fun aRepostThatOnlyChangesTheTimesStillCountsAsHeard() {
+    post("a")
+    val read = phone.conversations().single().let { talk -> talk.copy(messages = talk.messages.map { it.copy(at = 1L) }) }
+
+    phone.heard(read)
+    deliver()
+
+    assertEquals(1, reads)
+  }
+
+  @Test
   fun aReplyStillWorksAfterTheConversationWasHeard() {
     post("a")
     phone.heard(phone.conversations().single())

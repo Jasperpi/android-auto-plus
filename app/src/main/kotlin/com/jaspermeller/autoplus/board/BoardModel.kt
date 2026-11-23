@@ -211,6 +211,15 @@ class BoardModel(
   }
 
   private fun send(talk: Conversation, text: String) {
+    // Something arrived while the reply was being chosen or spoken ("actually, don't come").
+    // Sending now would answer a message the driver has not heard, and the phone would then
+    // count it as dealt with. So the reply is held back and the thread is read again, new
+    // message included. It also covers an app that reuses one notification for another chat.
+    val live = signals.conversations().firstOrNull { it.key == talk.key }
+    if (live != null && !live.sameWords(talk)) {
+      open(live)
+      return
+    }
     val mine = turn
     if (!signals.reply(talk.key, text)) {
       phase(Phase.Trouble("Could not send. Reply from your phone when you stop", canRetry = false))

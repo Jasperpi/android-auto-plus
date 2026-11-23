@@ -18,6 +18,13 @@ data class Conversation(
     val canReply: Boolean,
 ) {
   val latestAt: Long get() = messages.lastOrNull()?.at ?: 0L
+
+  /**
+   * Whether [other] is the same thread saying the same things. Times are left out: an app that
+   * sends no times gets the time of each repost instead, so they change without anything new.
+   */
+  fun sameWords(other: Conversation): Boolean =
+      title == other.title && messages.map { it.sender to it.text } == other.messages.map { it.sender to it.text }
 }
 
 /** What the phone's active media session reports. */

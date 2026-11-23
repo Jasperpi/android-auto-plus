@@ -4,6 +4,7 @@ import com.jaspermeller.autoplus.FakeDictation
 import com.jaspermeller.autoplus.FakeSignals
 import com.jaspermeller.autoplus.FakeSpeaker
 import com.jaspermeller.autoplus.FakeTimer
+import com.jaspermeller.autoplus.signal.Message
 import com.jaspermeller.autoplus.talk
 import com.jaspermeller.autoplus.voice.Heard
 import com.jaspermeller.autoplus.voice.Spoken
@@ -85,6 +86,49 @@ class BoardModelTest {
     assertEquals(stopsBefore, speaker.stops)
     speaker.finish()
     assertEquals(listOf("a"), signals.heardKeys)
+  }
+
+  @Test
+  fun aReadyMadeReplyIsHeldBackWhenSomethingNewHasArrived() {
+    board.open(maya)
+    speaker.finish()
+    // The phone posts the thread again with a new message while the reply signs are up.
+    val updated = maya.copy(messages = maya.messages + Message("Maya", "actually don't come", 99L))
+    signals.talks = listOf(updated, dad)
+
+    board.quick("On my way")
+
+    assertTrue("nothing is sent past a message the driver has not heard", signals.sent.isEmpty())
+    assertEquals(updated, (board.scene as Scene.Thread).talk)
+    assertEquals(Phase.Reading, phase)
+    assertTrue(speaker.said.last().endsWith("actually don't come."))
+  }
+
+  @Test
+  fun aSpokenReplyIsHeldBackWhenSomethingNewArrivesDuringTheCountdown() {
+    board.open(maya)
+    board.reply()
+    dictation.hear(Heard.Words("See you at six"))
+    timer.advance(2000)
+    val updated = maya.copy(messages = maya.messages + Message("Maya", "make it seven", 99L))
+    signals.talks = listOf(updated, dad)
+
+    timer.advance(2000)
+
+    assertTrue(signals.sent.isEmpty())
+    assertEquals(Phase.Reading, phase)
+    assertTrue(speaker.said.last().endsWith("make it seven."))
+  }
+
+  @Test
+  fun aRepostThatOnlyChangesTheTimesDoesNotHoldAReplyBack() {
+    board.open(maya)
+    // An app that sends no message times: every repost stamps them afresh.
+    signals.talks = listOf(maya.copy(messages = maya.messages.map { it.copy(at = it.at + 5000) }), dad)
+
+    board.quick("On my way")
+
+    assertEquals(listOf("a" to "On my way"), signals.sent)
   }
 
   @Test

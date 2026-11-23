@@ -86,6 +86,14 @@ class BoardPainter(
   private var deafUntil = 0L
   private var lastLayout: Any? = null
 
+  /**
+   * False when the last frame was left blank because the surface is too small for the board.
+   * Whoever owns the surface must then drop a reply in progress: it can no longer be read or
+   * cancelled, and must not send itself from behind a blank screen.
+   */
+  var showing = false
+    private set
+
   /** Where the tappable signs were on the last frame, for tests and for hit testing. */
   val targetBoxes: List<RectF> get() = targets.map { RectF(it.box) }
 
@@ -97,6 +105,7 @@ class BoardPainter(
     kit.dp = frame.dp
     kit.colors = if (frame.night) Palette.NIGHT else Palette.DAY
     animating = false
+    showing = false
     targets.clear()
 
     // Covers changes nobody tapped for too: a countdown running out, a readout failing.
@@ -119,6 +128,7 @@ class BoardPainter(
       else -> MIN_HEIGHT
     }
     if (area.width() < MIN_WIDTH * dp || area.height() < least * dp) return false
+    showing = true
 
     when (val scene = board.scene) {
       Scene.Gantry -> if (board.ready) gantry(canvas, area, board) else setup(canvas, area)
@@ -231,7 +241,10 @@ class BoardPainter(
     var left = top.left
     val art = track.art
     val side = min(top.height(), top.width() * 0.42f)
-    if (art != null && !art.isRecycled && side >= 56 * dp) {
+    // A software canvas (the fallback when a surface refuses a hardware one) cannot draw a
+    // sleeve the player handed over as a hardware bitmap; the sign goes without it.
+    val drawable = art != null && !art.isRecycled && (art.config != Bitmap.Config.HARDWARE || c.isHardwareAccelerated)
+    if (art != null && drawable && side >= 56 * dp) {
       val frame = RectF(top.left, top.centerY() - side / 2, top.left + side, top.centerY() + side / 2)
       cover(c, art, frame)
       left = frame.right + pad
@@ -385,6 +398,10 @@ class BoardPainter(
           }
         }
       }
+      // Through listening, confirming and trouble, the way out is always the first of three
+      // slots. The board moves between these on its own (the recognizer finishes, or hears
+      // nothing) while a finger may already be on its way to Cancel; whatever is under that
+      // finger when it lands must also back out, and never send.
       is Phase.Listening -> {
         val (wordsBox, side) = split(below)
         speech(c, wordsBox, phase.words.ifBlank { "Say your reply" })
@@ -394,9 +411,9 @@ class BoardPainter(
         val (wordsBox, side) = split(below)
         speech(c, wordsBox, phase.words)
         stack(c, side, listOf(
-            Plate("Send now", colors.green, colors.white, colors.white) { board.sendNow() },
-            Plate("Say it again", colors.paper, colors.ink, colors.ink) { board.reply() },
             Plate("Cancel", colors.red, colors.white, colors.white) { board.cancelReply() },
+            Plate("Say it again", colors.paper, colors.ink, colors.ink) { board.reply() },
+            Plate("Send now", colors.green, colors.white, colors.white) { board.sendNow() },
         ))
       }
       Phase.Sent -> {
@@ -409,8 +426,8 @@ class BoardPainter(
         kit.sign(c, wordsBox, colors.orange, colors.ink)
         kit.paragraph(c, kit.inside(wordsBox), phase.what, (wordsBox.height() * 0.2f).coerceIn(24 * dp, 40 * dp), colors.ink)
         val plates = ArrayList<Plate>()
-        if (phase.canRetry) plates += Plate("Try again", colors.paper, colors.ink, colors.ink) { board.reply() }
         plates += Plate("Go back", colors.paper, colors.ink, colors.ink) { board.cancelReply() }
+        if (phase.canRetry) plates += Plate("Try again", colors.paper, colors.ink, colors.ink) { board.reply() }
         stack(c, side, plates)
       }
     }
@@ -451,18 +468,23 @@ class BoardPainter(
     }
   }
 
+  /**
+   * Lays the plates into [SLOTS] equal slots, first slot first, whether there is one plate or
+   * three. A plate therefore keeps its place when the others around it come and go.
+   */
   private fun stack(c: Canvas, box: RectF, plates: List<Plate>) {
     if (plates.isEmpty()) return
     val gap = GAP * dp
+    val slots = max(SLOTS, plates.size)
     // Side by side when the space is a short strip, stacked when it is a column.
     if (box.width() > box.height() * 1.8f) {
-      val width = (box.width() - gap * (plates.size - 1)) / plates.size
+      val width = (box.width() - gap * (slots - 1)) / slots
       plates.forEachIndexed { i, plate ->
         val x = box.left + (width + gap) * i
         plate(c, RectF(x, box.top, x + width, box.bottom), plate)
       }
     } else {
-      val height = min((box.height() - gap * (plates.size - 1)) / plates.size, 150 * dp)
+      val height = min((box.height() - gap * (slots - 1)) / slots, 150 * dp)
       plates.forEachIndexed { i, plate ->
         val y = box.top + (height + gap) * i
         plate(c, RectF(box.left, y, box.right, y + height), plate)
@@ -618,6 +640,9 @@ class BoardPainter(
 
     /** How long the board ignores taps after its signs change. */
     const val SETTLE_MS = 500L
+
+    /** The choices beside a reply always sit in this many slots. */
+    const val SLOTS = 3
     private val NIGHT_COVER = PorterDuffColorFilter(0xFFA8A8A8.toInt(), PorterDuff.Mode.MULTIPLY)
   }
 }

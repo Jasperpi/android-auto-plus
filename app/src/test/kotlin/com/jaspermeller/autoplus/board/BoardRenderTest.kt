@@ -192,6 +192,7 @@ class BoardRenderTest {
     painter.paint(Canvas(bitmap), Frame(420, 280, Rect(0, 0, 420, 280), 1f, night = false, now = 0), board)
 
     assertTrue("no Send or Cancel is offered where the words cannot be read", painter.targetBoxes.isEmpty())
+    assertFalse("and the painter says so, so the reply can be dropped", painter.showing)
   }
 
   @Test
@@ -232,8 +233,8 @@ class BoardRenderTest {
     dictation.hear(Heard.Words("wrong words"))
     paintAt(0)
     paintAt(1000)
-    // Cancel is the last of the three signs beside the words.
-    val cancel = painter.targetBoxes.last()
+    // After the back arrow, Cancel is the first of the three signs beside the words.
+    val cancel = painter.targetBoxes[1]
 
     assertTrue(painter.tap(cancel.centerX(), cancel.centerY(), 1000, board))
     assertEquals(Phase.Ready, (board.scene as Scene.Thread).phase)
@@ -243,6 +244,51 @@ class BoardRenderTest {
 
     timer.advance(10_000)
     assertTrue("neither the cancelled words nor a ready-made line went out", signals.sent.isEmpty())
+  }
+
+  private fun boxesAt(width: Int, height: Int): List<RectF> {
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    painter.paint(Canvas(bitmap), Frame(width, height, Rect(0, 0, width, height), 1f, night = false, now = 0), board)
+    return painter.targetBoxes
+  }
+
+  @Test
+  fun theWayOutKeepsItsPlaceWhenTheBoardMovesOnByItself() {
+    // Wide (choices in a column beside the words) and narrow (choices in a row under them).
+    for ((width, height) in listOf(1280 to 720, 1920 to 720, 420 to 320)) {
+      board.open(signals.talks.first())
+      board.reply()
+      val cancelWhileListening = boxesAt(width, height)[1]
+
+      // The recognizer finishes on its own: the signs change with a finger already on its way.
+      dictation.hear(Heard.Words("wrong words"))
+      val confirming = boxesAt(width, height)
+      assertEquals("$width x $height: Cancel stays put when the words arrive", cancelWhileListening, confirming[1])
+      assertEquals("three choices beside the words", 4, confirming.size)
+
+      board.reply()
+      dictation.hear(Heard.Silence)
+      assertEquals("$width x $height: the same place backs out of trouble too", cancelWhileListening, boxesAt(width, height)[1])
+      board.back()
+    }
+  }
+
+  @Test
+  fun aTapMeantForCancelThatLandsAfterTheWordsArriveStillCancels() {
+    board.open(signals.talks.first())
+    board.reply()
+    paintAt(0)
+    paintAt(1000)
+    val cancel = painter.targetBoxes[1]
+    dictation.hear(Heard.Words("wrong words"))
+    paintAt(1010)
+
+    // A reach takes longer than the pause after a change of signs.
+    assertTrue(painter.tap(cancel.centerX(), cancel.centerY(), 1800, board))
+
+    assertEquals(Phase.Ready, (board.scene as Scene.Thread).phase)
+    timer.advance(10_000)
+    assertTrue("the wrong words never went out", signals.sent.isEmpty())
   }
 
   @Test

@@ -118,6 +118,8 @@ class PhoneView(
         Frame(width, height, boardArea, dp, night, SystemClock.uptimeMillis(), motion),
         board,
     )
+    // Split-screen can leave the board too small to show; a reply must not send from behind it.
+    if (!painter.showing) board.pause()
     if (moving) postInvalidateDelayed(FRAME_MS)
 
     stepBoxes.clear()

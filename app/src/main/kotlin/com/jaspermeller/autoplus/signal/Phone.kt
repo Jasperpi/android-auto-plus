@@ -77,7 +77,7 @@ class Phone(private val context: Context) : Signals {
     // Something arrived while the car was talking. Marking the thread read now would bury a
     // message nobody heard, so it stays on the board with the new one counted. The messages
     // themselves are compared, since senders' clocks cannot be trusted to run forwards.
-    if (reading.conversation.messages != talk.messages) return
+    if (!reading.conversation.sameWords(talk)) return
     try {
       // Prefer the app's own action so its unread badge clears too.
       reading.markRead?.send() ?: dismiss(key)

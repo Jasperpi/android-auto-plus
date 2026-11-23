@@ -115,7 +115,6 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
       return
     }
     focus = quiet
-    began = SystemClock.elapsedRealtime()
     audio.addOnModeChangedListener(context.mainExecutor, callWatch)
     watchingCalls = true
     this.partial = partial
@@ -132,6 +131,9 @@ class RecognizerDictation(private val context: Context, private val feed: MicFee
 
   private fun start(onDevice: Boolean) {
     val mine = ++session
+    // The grace period for the recognizer's own grab of the sound starts with each recognizer,
+    // the fallback included.
+    began = SystemClock.elapsedRealtime()
     val created = if (onDevice) {
       SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
     } else {
